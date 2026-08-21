@@ -163,6 +163,7 @@
   .shell-hint{ font-family:var(--mono); font-size:10.5px; color:var(--text-2); margin-left:auto; }
 
   .mode-container{ flex:1; min-height:0; display:flex; flex-direction:column; animation:modeFadeIn .25s ease; }
+  .mode-container[hidden]{ display:none; }
   @keyframes modeFadeIn{ from{ opacity:0; transform:translateY(3px); } to{ opacity:1; transform:translateY(0); } }
 
   /* ---- particles-mode-only additions ---- */
