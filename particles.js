@@ -279,6 +279,11 @@
     }
     structSlider(genGroup, 'density', 'density', 40, 240, 5, 'px');
     structSlider(genGroup, 'threshold', 'threshold', 0, 0.6, 0.01, '');
+    const reshuffleBtn = el('button','btn btn-sm btn-block','Reshuffle');
+    reshuffleBtn.title = 'Regenerate with fresh randomness (same image, same settings)';
+    reshuffleBtn.style.marginTop = '4px';
+    reshuffleBtn.addEventListener('click', () => { if(img) buildParticles(); });
+    genGroup.appendChild(reshuffleBtn);
     inspector.appendChild(genGroup);
 
     const colorGroup = el('div','group');
@@ -363,7 +368,7 @@
     durRow.appendChild(durLab);
     const durSeg = el('div','segmented');
     [3,6,10,15].forEach(s => {
-      const b = el('button','seg-btn'+(s===state.loopDuration?' active':''), s+'s');
+      const b = el('button','seg-btn'+(Math.abs(s-state.loopDuration)<0.01?' active':''), s+'s');
       b.addEventListener('click', () => { state.loopDuration=s; durVal.textContent=s.toFixed(1)+'s'; durSlider.value=s; [...durSeg.children].forEach(c=>c.classList.remove('active')); b.classList.add('active'); });
       durSeg.appendChild(b);
     });
@@ -376,6 +381,17 @@
     timingGroup.appendChild(durRow);
     inspector.appendChild(timingGroup);
   }
+
+  /* ---------------- keyboard shortcuts ---------------- */
+  document.addEventListener('keydown', e => {
+    if(window.FORGE_MODE !== 'particles') return;
+    const tag = (e.target && e.target.tagName) || '';
+    if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if(e.metaKey || e.ctrlKey || e.altKey) return;
+    if(e.code === 'Space'){ e.preventDefault(); playBtn.click(); }
+    else if(e.key === 'e' || e.key === 'E'){ e.preventDefault(); exportBtn.click(); }
+    else if(e.key === 'r' || e.key === 'R'){ if(img) buildParticles(); }
+  });
 
   /* ---------------- transport ---------------- */
   playBtn.addEventListener('click', () => {
@@ -422,10 +438,42 @@
     setTimeout(() => { if(recorder.state!=='inactive') recorder.stop(); }, Math.round(duration*1000)+120);
   });
 
+  /* ---------------- settings autosave (style/timing only — the source image is never persisted) ---------------- */
+  const SETTINGS_KEY = 'forge:particles:settings:v1';
+
+  function loadSavedSettings(){
+    try{ const raw = localStorage.getItem(SETTINGS_KEY); return raw ? JSON.parse(raw) : null; }
+    catch(err){ return null; }
+  }
+  function applySettings(saved){
+    if(!saved) return false;
+    try{
+      if(saved.frameId){ const f = FRAME_PRESETS.find(fp => fp.id === saved.frameId); if(f) state.frame = f; }
+      const numeric = ['density','threshold','hueShift','saturation','posterize','brightness','jitter','pulse','scatter','depthSpread','sizeBase','sizeVariance','loopDuration'];
+      numeric.forEach(k => { if(typeof saved[k] === 'number') state[k] = saved[k]; });
+      if(saved.orbit) state.orbit = saved.orbit;
+      if(saved.bg) state.bg = saved.bg;
+      return true;
+    } catch(err){ console.warn('Forge: could not restore saved settings', err); return false; }
+  }
+  let _lastSavedJSON = '';
+  function saveSettingsIfChanged(){
+    try{
+      const payload = Object.assign({frameId: state.frame.id}, state);
+      const json = JSON.stringify(payload);
+      if(json !== _lastSavedJSON){ localStorage.setItem(SETTINGS_KEY, json); _lastSavedJSON = json; }
+    } catch(err){ /* storage unavailable — settings just won't persist */ }
+  }
+
   /* ---------------- init ---------------- */
+  const restored = applySettings(loadSavedSettings());
   applyFrameSize();
   applyBg();
   buildInspector();
   requestAnimationFrame(render);
+
+  setInterval(saveSettingsIfChanged, 2000);
+  window.addEventListener('beforeunload', saveSettingsIfChanged);
+  if(restored) toast('Restored your last session\'s style settings.');
 
 })();

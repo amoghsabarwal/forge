@@ -33,10 +33,19 @@ Each mode is a self-contained script — they don't share rendering code, only t
 
 Working prototype, built iteratively. A few things worth knowing before you rely on it:
 
-- **No project save/load.** State resets on reload — export before you refresh.
+- **Style settings autosave; images don't.** Layout, timing, effects, text/logo config, and particle style are saved to `localStorage` a couple of seconds after you change them and restored on your next visit. The images themselves are never persisted (nothing leaves the browser, and photo-sized blobs aren't a great fit for `localStorage`) — you'll need to re-add those after a reload.
 - **The effects pass in Shaders mode is real-time, not offline-rendered.** Stacking several effects at a 3× export multiplier will drop frames rather than corrupt the export — it'll just look choppier, not broken.
 - **Focus points fix cropping, not camera framing.** In Shaders mode, a per-image focus point changes what part of the photo gets cropped into its card, but the flythrough camera still centers on the card's position, not the subject inside it.
 - **Density and color changes in Particles mode require regenerating the whole particle set** from the source image — those sliders are debounced so dragging doesn't stutter, but there's a brief rebuild pause after release, unlike the motion sliders which are instant.
+
+## Keyboard shortcuts
+
+Work anywhere except while typing in a text field.
+
+- **Space** — play / pause
+- **E** — export
+- **1 / 2 / 3** — switch layout to Wall / Globe / Tunnel (Shaders mode)
+- **R** — reshuffle the particle field with fresh randomness (Particles mode)
 
 ## License
 

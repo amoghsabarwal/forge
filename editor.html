@@ -44,7 +44,12 @@
   <div class="workspace">
 
     <aside class="sidebar sidebar-left">
-      <div class="panel-title">MEDIA <span id="mediaCount">· 0</span></div>
+      <div class="panel-title">
+        <span>MEDIA <span id="mediaCount">· 0</span></span>
+        <span class="panel-title-actions">
+          <button class="panel-icon-btn" id="shuffleBtn" title="Shuffle image order">Shuffle</button>
+        </span>
+      </div>
       <div class="media-drop" id="mediaDrop">
         <input type="file" id="mediaInput" accept="image/*" multiple hidden>
         <p>+ Add images</p>
@@ -90,6 +95,7 @@
   </header>
 
   <div class="workspace">
+    <aside class="sidebar sidebar-ghost" aria-hidden="true"></aside>
     <section class="viewport" id="viewportP">
       <canvas id="outputCanvasP" class="hidden"></canvas>
       <button class="btn btn-change" id="changeBtnP" hidden>Change image</button>

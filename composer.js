@@ -41,6 +41,7 @@
   const mediaInput = document.getElementById('mediaInput');
   const mediaList = document.getElementById('mediaList');
   const mediaCount = document.getElementById('mediaCount');
+  const shuffleBtn = document.getElementById('shuffleBtn');
   const inspector = document.getElementById('inspector');
   const playBtn = document.getElementById('playBtn');
   const exportBtn = document.getElementById('exportBtn');
@@ -48,11 +49,17 @@
   const ringFg = document.getElementById('ringFg');
   const toastEl = document.getElementById('toast');
 
-  function toast(msg){
-    toastEl.textContent = msg;
+  function toast(msg, action){
+    toastEl.innerHTML = '';
+    toastEl.appendChild(document.createTextNode(msg));
+    if(action){
+      const btn = el('button','toast-action', action.label);
+      btn.addEventListener('click', () => { action.onClick(); toastEl.classList.remove('show'); });
+      toastEl.appendChild(btn);
+    }
     toastEl.classList.add('show');
     clearTimeout(toast._t);
-    toast._t = setTimeout(()=>toastEl.classList.remove('show'), 2600);
+    toast._t = setTimeout(()=>toastEl.classList.remove('show'), action ? 5000 : 2600);
   }
   function el(tag, cls, text){
     const e = document.createElement(tag);
@@ -180,12 +187,53 @@
 
   function currentParams(){ return state.params[state.layout]; }
 
-  function rebuildLayout(){
-    while(cardGroup.children.length){
-      const m = cardGroup.children.pop();
-      if(m.material) m.material.dispose();
+  // Cards are expensive to create (each one compiles its own GPU shader program) but cheap
+  // to move. rebuildLayout() runs on every tick of a slider drag for structural params
+  // (gap, padding, twist, ring spacing), so it must never touch materials it doesn't have to —
+  // this cache keeps one mesh+material per image alive across rebuilds and only recreates
+  // GPU state when something that actually needs it changes (aspect/focus/radius/feather).
+  // That's the fix for "movement" feeling janky while dragging those sliders.
+  const meshCache = new Map(); // item.id -> {mesh, material, aspect, focusX, focusY, radius, feather}
+
+  function getOrCreateMesh(item, cardAspect, radiusFrac, featherFrac){
+    let entry = meshCache.get(item.id);
+    if(!entry){
+      const material = makeCardMaterial(item, cardAspect, radiusFrac, featherFrac);
+      const mesh = new THREE.Mesh(sharedGeo(), material);
+      entry = {mesh, material, aspect:cardAspect, focusX:item.focus.x, focusY:item.focus.y, radius:radiusFrac, feather:featherFrac};
+      meshCache.set(item.id, entry);
+      return entry.mesh;
     }
+    if(entry.aspect !== cardAspect || entry.focusX !== item.focus.x || entry.focusY !== item.focus.y){
+      const cov = coverUV(item.aspect, cardAspect, item.focus);
+      entry.material.uniforms.uUvScale.value.set(cov.scale[0], cov.scale[1]);
+      entry.material.uniforms.uUvOffset.value.set(cov.offset[0], cov.offset[1]);
+      entry.aspect = cardAspect; entry.focusX = item.focus.x; entry.focusY = item.focus.y;
+    }
+    if(entry.radius !== radiusFrac || entry.feather !== featherFrac){
+      entry.material.uniforms.uRadius.value = radiusFrac;
+      entry.material.uniforms.uFeather.value = featherFrac;
+      entry.radius = radiusFrac; entry.feather = featherFrac;
+    }
+    return entry.mesh;
+  }
+
+  function pruneMeshCache(){
+    const liveIds = new Set(images.map(it => it.id));
+    for(const [id, entry] of meshCache){
+      if(!liveIds.has(id)){
+        cardGroup.remove(entry.mesh);
+        entry.material.dispose();
+        meshCache.delete(id);
+      }
+    }
+  }
+
+  function rebuildLayout(){
+    pruneMeshCache();
     const N = images.length;
+    while(cardGroup.children.length) cardGroup.remove(cardGroup.children[0]); // detach only — cache still owns them
+
     if(N === 0){ waypoints = []; visitOrder = []; return; }
 
     const p = currentParams();
@@ -205,8 +253,9 @@
         const col = i % cols, row = Math.floor(i / cols);
         const x = (col - (cols-1)/2) * spacingX;
         const y = ((rows-1)/2 - row) * spacingY;
-        const mesh = new THREE.Mesh(sharedGeo(), makeCardMaterial(item, p.cardRatio, radiusFrac, featherFrac));
+        const mesh = getOrCreateMesh(item, p.cardRatio, radiusFrac, featherFrac);
         mesh.position.set(x, y, 0);
+        mesh.rotation.set(0, 0, 0);
         mesh.scale.set(planeW, planeH, 1);
         cardGroup.add(mesh);
       });
@@ -219,7 +268,7 @@
         const th = goldenAngle * i;
         const dir = new THREE.Vector3(Math.cos(th)*r, yFrac, Math.sin(th)*r);
         const pos = dir.clone().multiplyScalar(radius);
-        const mesh = new THREE.Mesh(sharedGeo(), makeCardMaterial(item, p.cardRatio, radiusFrac, featherFrac));
+        const mesh = getOrCreateMesh(item, p.cardRatio, radiusFrac, featherFrac);
         mesh.position.copy(pos);
         mesh.lookAt(pos.clone().multiplyScalar(2));
         mesh.scale.set(planeW, planeH, 1);
@@ -233,7 +282,7 @@
         const angle = twistRad * i;
         const z = (i - (N-1)/2) * zSpacing;
         const pos = new THREE.Vector3(Math.cos(angle)*radius, Math.sin(angle)*radius, z);
-        const mesh = new THREE.Mesh(sharedGeo(), makeCardMaterial(item, p.cardRatio, radiusFrac, featherFrac));
+        const mesh = getOrCreateMesh(item, p.cardRatio, radiusFrac, featherFrac);
         mesh.position.copy(pos);
         mesh.lookAt(new THREE.Vector3(0, 0, z));
         mesh.scale.set(planeW, planeH, 1);
@@ -251,7 +300,22 @@
       mesh.material.uniforms.uRadius.value = radiusFrac;
       mesh.material.uniforms.uFeather.value = featherFrac;
     });
+    for(const entry of meshCache.values()){ entry.radius = radiusFrac; entry.feather = featherFrac; }
   }
+
+  // Coalesce slider-driven work to once per animation frame. The label text still updates
+  // on every 'input' event (cheap, feels instant); only the Three.js side is throttled, so a
+  // fast drag never queues up more rebuilds than the screen can actually show.
+  function rafThrottle(fn){
+    let scheduled = false;
+    return function(){
+      if(scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => { scheduled = false; fn(); });
+    };
+  }
+  const rebuildLayoutSoon = rafThrottle(rebuildLayout);
+  const updateShaderUniformsSoon = rafThrottle(updateShaderUniformsOnly);
 
   /* ================= flythrough waypoints ================= */
 
@@ -717,7 +781,15 @@
       const thumb = document.createElement('img'); thumb.src = item.url;
       const name = el('span','name', item.name);
       const rm = el('button','rm','×');
-      rm.addEventListener('click', () => { images.splice(idx,1); onMediaChanged(); });
+      rm.addEventListener('click', () => {
+        const [removed] = images.splice(idx,1);
+        const removedAt = idx;
+        onMediaChanged();
+        toast('Image removed.', { label:'Undo', onClick: () => {
+          images.splice(Math.min(removedAt, images.length), 0, removed);
+          onMediaChanged();
+        }});
+      });
       top.appendChild(thumb); top.appendChild(name); top.appendChild(rm);
 
       top.addEventListener('dragstart', e => { row.classList.add('dragging'); e.dataTransfer.setData('text/plain', String(idx)); });
@@ -760,6 +832,16 @@
   ['dragenter','dragover'].forEach(evt => mediaDrop.addEventListener(evt, e=>{ e.preventDefault(); mediaDrop.classList.add('drag'); }));
   ['dragleave','drop'].forEach(evt => mediaDrop.addEventListener(evt, e=>{ e.preventDefault(); mediaDrop.classList.remove('drag'); }));
   mediaDrop.addEventListener('drop', e => { if(e.dataTransfer.files.length) loadImages(e.dataTransfer.files); });
+
+  shuffleBtn.addEventListener('click', () => {
+    if(images.length < 2) return;
+    for(let i = images.length - 1; i > 0; i--){
+      const j = Math.floor(Math.random() * (i + 1));
+      [images[i], images[j]] = [images[j], images[i]];
+    }
+    onMediaChanged();
+    toast('Image order shuffled.');
+  });
 
   dropzone.addEventListener('click', () => mediaInput.click());
   ['dragenter','dragover'].forEach(evt => viewport.addEventListener(evt, e=>{ e.preventDefault(); dropzone.classList.add('drag'); }));
@@ -831,7 +913,7 @@
       input.addEventListener('input', () => {
         p[key] = parseFloat(input.value);
         span.textContent = formatNum(p[key], step)+(suffix||'');
-        if(isStructural) rebuildLayout(); else updateShaderUniformsOnly();
+        if(isStructural) rebuildLayoutSoon(); else updateShaderUniformsSoon();
       });
       row.appendChild(lab); row.appendChild(input);
       paramGroup.appendChild(row);
@@ -953,7 +1035,7 @@
     durRow.appendChild(durLabel);
     const durSeg = el('div','segmented');
     [5,10,15,20,30].forEach(s => {
-      const b = el('button','seg-btn'+(s===state.loopDuration?' active':''), s+'s');
+      const b = el('button','seg-btn'+(Math.abs(s-state.loopDuration)<0.01?' active':''), s+'s');
       b.addEventListener('click', () => {
         state.loopDuration = s; durVal.textContent = s.toFixed(1)+'s'; durSlider.value = s;
         [...durSeg.children].forEach(c=>c.classList.remove('active')); b.classList.add('active');
@@ -1120,6 +1202,20 @@
     inspector.appendChild(exportGroup);
   }
 
+  /* ================= keyboard shortcuts ================= */
+
+  document.addEventListener('keydown', e => {
+    if(window.FORGE_MODE !== 'shaders') return;
+    const tag = (e.target && e.target.tagName) || '';
+    if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if(e.metaKey || e.ctrlKey || e.altKey) return;
+    if(e.code === 'Space'){ e.preventDefault(); playBtn.click(); }
+    else if(e.key === '1' && state.layout !== 'wall'){ state.layout='wall'; rebuildLayout(); buildInspector(); }
+    else if(e.key === '2' && state.layout !== 'globe'){ state.layout='globe'; rebuildLayout(); buildInspector(); }
+    else if(e.key === '3' && state.layout !== 'tunnel'){ state.layout='tunnel'; rebuildLayout(); buildInspector(); }
+    else if(e.key === 'e' || e.key === 'E'){ e.preventDefault(); exportBtn.click(); }
+  });
+
   /* ================= transport ================= */
 
   playBtn.addEventListener('click', () => {
@@ -1185,11 +1281,80 @@
     setTimeout(() => { if(recorder.state !== 'inactive') recorder.stop(); }, Math.round(duration*1000)+120);
   });
 
+  /* ================= settings autosave (style/timing only — images are never persisted) ================= */
+
+  const SETTINGS_KEY = 'forge:composer:settings:v1';
+
+  function serializeSettings(){
+    return {
+      frameId: state.frame.id,
+      layout: state.layout,
+      params: JSON.parse(JSON.stringify(state.params)),
+      bg: { mode:state.bg.mode, color:state.bg.color, gradFrom:state.bg.gradFrom, gradTo:state.bg.gradTo, gradAngle:state.bg.gradAngle },
+      loopDuration: state.loopDuration,
+      logo: { enabled:state.logo.enabled, size:state.logo.size, opacity:state.logo.opacity, rotation:state.logo.rotation, blend:state.logo.blend, anchor:state.logo.anchor },
+      text: { enabled:state.text.enabled, content:state.text.content, size:state.text.size, color:state.text.color, weight:state.text.weight, anchor:state.text.anchor },
+      exportResMult: state.exportResMult,
+      fx: FX_EFFECTS.map(f => ({ id:f.id, enabled:f.enabled, params: f.params.map(p => ({key:p.key, value:p.value})) }))
+    };
+  }
+
+  function applySettings(saved){
+    if(!saved) return false;
+    try{
+      if(saved.frameId){ const f = FRAME_PRESETS.find(fp => fp.id === saved.frameId); if(f) state.frame = f; }
+      if(saved.layout) state.layout = saved.layout;
+      if(saved.params) Object.keys(state.params).forEach(k => { if(saved.params[k]) Object.assign(state.params[k], saved.params[k]); });
+      if(saved.bg) Object.assign(state.bg, saved.bg);
+      if(typeof saved.loopDuration === 'number') state.loopDuration = saved.loopDuration;
+      if(saved.logo) Object.assign(state.logo, saved.logo);
+      if(saved.text) Object.assign(state.text, saved.text);
+      if(typeof saved.exportResMult === 'number') state.exportResMult = saved.exportResMult;
+      return true;
+    } catch(err){ console.warn('Forge: could not restore saved settings', err); return false; }
+  }
+
+  // fx param defaults are assigned inside initFx(), so this must run AFTER initFx()
+  // or its restored values would immediately get clobbered back to defaults.
+  function applyFxSettings(saved){
+    if(!saved || !Array.isArray(saved.fx)) return;
+    saved.fx.forEach(savedFx => {
+      const fx = FX_EFFECTS.find(f => f.id === savedFx.id);
+      if(!fx) return;
+      fx.enabled = !!savedFx.enabled;
+      (savedFx.params||[]).forEach(sp => {
+        const pm = fx.params.find(p => p.key === sp.key);
+        if(pm && typeof sp.value === 'number') pm.value = sp.value;
+      });
+    });
+  }
+
+  function loadSavedSettings(){
+    try{ const raw = localStorage.getItem(SETTINGS_KEY); return raw ? JSON.parse(raw) : null; }
+    catch(err){ return null; }
+  }
+
+  let _lastSavedJSON = '';
+  function saveSettingsIfChanged(){
+    try{
+      const json = JSON.stringify(serializeSettings());
+      if(json !== _lastSavedJSON){ localStorage.setItem(SETTINGS_KEY, json); _lastSavedJSON = json; }
+    } catch(err){ /* storage unavailable — settings just won't persist */ }
+  }
+
   /* ================= init ================= */
+
+  const savedSettings = loadSavedSettings();
+  const restored = applySettings(savedSettings);
 
   initThree();
   initFx();
+  applyFxSettings(savedSettings);
   buildInspector();
   requestAnimationFrame(render);
+
+  setInterval(saveSettingsIfChanged, 2000);
+  window.addEventListener('beforeunload', saveSettingsIfChanged);
+  if(restored) toast('Restored your last session\'s style settings.');
 
 })();
