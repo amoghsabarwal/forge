@@ -3,105 +3,60 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Forge — turn a body of work into a living reel</title>
-<meta name="description" content="Forge — a browser-based procedural tool for turning a body of work into an animated, exportable reel. Compose images into a wall, globe or tunnel, or scatter one into particles.">
+<title>Forge — Design Interactive Motion for the Web</title>
+<meta name="description" content="Forge is a visual canvas editor for designing interactive motion for the web with shaders, media, 3D and interaction.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="landing.css">
 </head>
 <body class="landing-body">
-
 <div id="landing">
-
   <nav class="lnav">
     <a class="shell-mark" href="index.html">
       <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="2" transform="rotate(45 7 7)" style="fill:var(--accent)"/></svg>
       FORGE
     </a>
-    <a class="btn btn-ghost btn-sm lnav-cta" href="editor.html">Launch editor</a>
+    <a class="btn btn-ghost btn-sm lnav-cta" href="editor.html">Open editor</a>
   </nav>
 
   <section class="hero">
     <canvas id="emberCanvas"></canvas>
     <div class="hero-inner">
-      <span class="eyebrow">BROWSER-BASED · NO INSTALL</span>
-      <h1>Turn a body of work<br>into a living reel.</h1>
-      <p class="hero-sub">Compose your images into a wall, globe or tunnel — or scatter one into thousands of particles that move on their own. Direct the camera, stack effects, export the loop. Nothing leaves your browser.</p>
+      <span class="eyebrow">VISUAL CANVAS · WEB MOTION</span>
+      <h1>Design Interactive<br>Motion for the Web.</h1>
+      <p class="hero-sub">Create with shaders, media, 3D, and interaction in a visual canvas editor. Art-direct the motion, build the experience, and ship production-ready components to the web.</p>
       <div class="hero-actions">
-        <a href="editor.html" class="btn btn-primary btn-lg">Launch editor →</a>
+        <a href="editor.html" class="btn btn-primary btn-lg">Open editor →</a>
         <a href="https://github.com/amoghsabarwal/forge" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">View source</a>
       </div>
     </div>
   </section>
 
   <section class="process">
-    <span class="eyebrow eyebrow-center">THREE STEPS</span>
+    <span class="eyebrow eyebrow-center">THE WORKFLOW</span>
     <div class="process-grid">
-      <div class="step">
-        <span class="step-num">01</span>
-        <h3>Drop in images</h3>
-        <p>Add one image or a whole set. Everything runs locally — nothing uploads anywhere.</p>
-      </div>
-      <div class="step">
-        <span class="step-num">02</span>
-        <h3>Compose or scatter</h3>
-        <p>Arrange them into a Wall, Globe or Tunnel and fly a camera through it — or turn one into a particle field and tune how it moves.</p>
-      </div>
-      <div class="step">
-        <span class="step-num">03</span>
-        <h3>Export the loop</h3>
-        <p>Render a looping video at up to 3× your preview resolution, ready to drop into a reel.</p>
-      </div>
+      <div class="step"><span class="step-num">01</span><h3>Compose</h3><p>Bring media, type, shaders and 3D elements into a visual canvas. Keep every asset independent and editable.</p></div>
+      <div class="step"><span class="step-num">02</span><h3>Animate</h3><p>Stack effects, direct cameras, add interaction and build motion with a timeline instead of exporting a flat video.</p></div>
+      <div class="step"><span class="step-num">03</span><h3>Ship</h3><p>Turn the composition into a production-ready web component rather than stopping at a render.</p></div>
     </div>
   </section>
 
   <section class="modes">
-    <span class="eyebrow eyebrow-center">TWO MODES</span>
+    <span class="eyebrow eyebrow-center">ONE EDITOR · MANY PRIMITIVES</span>
     <div class="modes-grid">
-
-      <div class="mode-card">
-        <div class="mode-glyphs">
-          <div class="glyph">
-            <svg viewBox="0 0 40 40"><rect x="4" y="4" width="10" height="10" rx="1.5"/><rect x="16" y="4" width="10" height="10" rx="1.5"/><rect x="28" y="4" width="8" height="10" rx="1.5"/><rect x="4" y="16" width="10" height="10" rx="1.5"/><rect x="16" y="16" width="10" height="10" rx="1.5"/><rect x="28" y="16" width="8" height="10" rx="1.5"/><rect x="4" y="28" width="10" height="8" rx="1.5"/><rect x="16" y="28" width="10" height="8" rx="1.5"/><rect x="28" y="28" width="8" height="8" rx="1.5"/></svg>
-            <span>Wall</span>
-          </div>
-          <div class="glyph">
-            <svg viewBox="0 0 40 40"><circle cx="9" cy="20" r="3"/><circle cx="15" cy="9" r="3"/><circle cx="25" cy="9" r="3"/><circle cx="31" cy="20" r="3"/><circle cx="25" cy="31" r="3"/><circle cx="15" cy="31" r="3"/><circle cx="20" cy="20" r="3.5" opacity="0.5"/></svg>
-            <span>Globe</span>
-          </div>
-          <div class="glyph">
-            <svg viewBox="0 0 40 40"><rect x="16" y="16" width="8" height="8" rx="1" opacity="0.35"/><rect x="10" y="10" width="20" height="20" rx="1.5" opacity="0.6" fill="none" stroke="currentColor" stroke-width="1.5"/><rect x="3" y="3" width="34" height="34" rx="2" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
-            <span>Tunnel</span>
-          </div>
-        </div>
-        <h3>Composer</h3>
-        <p>Arrange many images into a Wall, Globe or Tunnel, then fly a scripted camera through it with holds on each piece. Add a logo, title text, a background, and a Bloom, Halftone, Dither or Grain pass on top.</p>
-      </div>
-
-      <div class="mode-card">
-        <div class="mode-glyphs mode-glyphs-single">
-          <div class="glyph glyph-wide">
-            <svg viewBox="0 0 96 40">
-              <circle cx="10" cy="20" r="1.6"/><circle cx="18" cy="12" r="1.2"/><circle cx="16" cy="28" r="1.4"/><circle cx="26" cy="8" r="1.6"/><circle cx="30" cy="22" r="1.2"/><circle cx="24" cy="33" r="1.3"/><circle cx="36" cy="15" r="1.5"/><circle cx="40" cy="27" r="1.2"/><circle cx="45" cy="6" r="1.3"/><circle cx="48" cy="18" r="1.6"/><circle cx="44" cy="32" r="1.2"/><circle cx="54" cy="10" r="1.4"/><circle cx="58" cy="24" r="1.6"/><circle cx="52" cy="30" r="1.1"/><circle cx="64" cy="14" r="1.3"/><circle cx="68" cy="28" r="1.5"/><circle cx="62" cy="5" r="1.2"/><circle cx="74" cy="19" r="1.4"/><circle cx="78" cy="9" r="1.2"/><circle cx="72" cy="33" r="1.3"/><circle cx="84" cy="22" r="1.5"/><circle cx="88" cy="12" r="1.2"/><circle cx="86" cy="31" r="1.1"/>
-            </svg>
-            <span>Particle field</span>
-          </div>
-        </div>
-        <h3>Particles</h3>
-        <p>Turn one image into thousands of independently animating points. Tune density, color quantization, jitter and pulse, then export the loop.</p>
-      </div>
-
+      <div class="mode-card"><h3>Shaders</h3><p>Procedural visual effects, distortion, halftone, dither, grain, bloom, color and custom GPU-driven treatments.</p></div>
+      <div class="mode-card"><h3>Media</h3><p>Images, logos, video and typography as independent layers with their own transforms, effects and animation.</p></div>
+      <div class="mode-card"><h3>3D</h3><p>Walls, globes, tunnels, camera flythroughs, materials and spatial compositions inside the same canvas.</p></div>
+      <div class="mode-card"><h3>Interaction</h3><p>Build motion that responds to cursor, hover, scroll and other web inputs — then ship it as an interactive component.</p></div>
     </div>
   </section>
 
   <footer class="lfooter">
-    <span class="brand-tag">PROTOTYPE</span>
-    <p>Everything runs client-side — no images or exports ever leave your browser.</p>
+    <span class="brand-tag">FORGE · PROTOTYPE</span>
+    <p>Design the motion visually. Ship the result to the web.</p>
     <a href="https://github.com/amoghsabarwal/forge" target="_blank" rel="noopener">GitHub →</a>
   </footer>
-
 </div>
-
 <script src="landing.js"></script>
 </body>
 </html>
