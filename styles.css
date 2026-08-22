@@ -48,12 +48,16 @@
      pushed the canvas left of true center.) A mode with no left sidebar (Particles)
      uses .sidebar-ghost to reserve the same column, so it centers the same way. */
   :root{ --side-w: 280px; }
-  .workspace{ flex:1; min-height:0; display:grid; grid-template-columns: var(--side-w) 1fr var(--side-w); }
+  .workspace{ flex:1; min-height:0; display:grid;
+    grid-template-columns: var(--side-w) 1fr var(--side-w);
+    grid-template-rows: minmax(0, 1fr); /* explicit row height — an implicit auto row can
+      collapse to content size and let the canvas push past the bottom of the window */
+  }
 
-  .sidebar{ width:auto; min-width:0; flex-shrink:0; background:var(--bg-1); overflow-y:auto; padding:16px; }
+  .sidebar{ width:auto; min-width:0; min-height:0; flex-shrink:0; background:var(--bg-1); overflow-y:auto; padding:16px; }
   .sidebar-left{ border-right:1px solid var(--border); }
   .sidebar-right{ border-left:1px solid var(--border); }
-  .sidebar-ghost{ background:var(--bg-1); border-right:1px solid var(--border); pointer-events:none; }
+  .sidebar-ghost{ background:var(--bg-1); border-right:1px solid var(--border); pointer-events:none; min-height:0; }
   .panel-title{ font-family:var(--mono); font-size:10.5px; letter-spacing:0.12em; color:var(--text-2);
     margin:4px 4px 14px; display:flex; align-items:center; justify-content:space-between; }
   .panel-title-actions{ display:flex; gap:6px; }
@@ -62,7 +66,7 @@
     transition:color .15s, border-color .15s, background .15s; }
   .panel-icon-btn:hover{ color:var(--text-0); border-color:#3a3531; background:var(--bg-3); }
 
-  .viewport{ position:relative; display:flex; align-items:center; justify-content:center; min-width:0;
+  .viewport{ position:relative; display:flex; align-items:center; justify-content:center; min-width:0; min-height:0;
     background:radial-gradient(ellipse at 50% 40%, #16130f 0%, var(--bg-0) 70%); padding:32px; overflow:hidden; }
   #outputCanvas{ max-width:100%; max-height:100%; width:auto; height:auto; display:block;
     box-shadow:0 30px 80px rgba(0,0,0,0.55); border-radius:2px; }
@@ -189,12 +193,19 @@
 
   .mode-container{ flex:1; min-height:0; display:flex; flex-direction:column; animation:modeFadeIn .25s ease; }
   .mode-container[hidden]{ display:none; }
+  /* This wrapper (topbar + workspace) previously had no class and no flex-grow, so its
+     height fell back to "as tall as its content needs" — the .workspace{flex:1} rule had
+     no flex parent to apply to, and only *looked* like it filled the window because the
+     inspector panel's content height happened to be close to typical window height. Giving
+     it flex:1 here makes it actually stretch to fill #shell, so .workspace's own flex:1
+     underneath it means something. */
+  .mode-inner{ flex:1; min-height:0; display:flex; flex-direction:column; }
   @keyframes modeFadeIn{ from{ opacity:0; transform:translateY(3px); } to{ opacity:1; transform:translateY(0); } }
 
   /* ---- particles-mode-only additions ---- */
   .particle-count{ font-family:var(--mono); font-size:10.5px; color:var(--text-2); }
   .btn-change{ position:absolute; top:16px; left:16px; z-index:2; }
-  .inspector{ width:auto; min-width:0; border-left:1px solid var(--border); background:var(--bg-1);
+  .inspector{ width:auto; min-width:0; min-height:0; border-left:1px solid var(--border); background:var(--bg-1);
     overflow-y:auto; padding:16px; }
   .viewport.viewport-particles{ background:#000; }
   #outputCanvasP{ max-width:100%; max-height:100%; width:auto; height:auto; display:block;
