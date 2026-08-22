@@ -3,40 +3,92 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Forge — Interactive Motion Editor</title>
-<meta name="description" content="Forge — a browser-based composition and motion-design editor for creating interactive web motion with shaders, media, 3D and interaction. Build layered compositions, stack effects per layer, animate with keyframes, and export video or ship production-ready components.">
+<title>Forge — Editor</title>
+<meta name="description" content="Forge — a browser-based composition and motion-design editor. Build layered compositions, stack effects per layer, animate with keyframes, export video.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="editor.css">
 </head>
 <body>
-<div id="shell">
-  <div class="shell-bar">
-    <a class="shell-mark" href="index.html" title="Back to home">FORGE</a>
-    <div class="editor-context">INTERACTIVE MOTION</div>
-    <span class="shell-hint">design → animate → ship to the web</span>
-  </div>
-  <div class="mode-container" id="modeShaders">
-    <div class="mode-inner">
-      <header class="topbar"><div class="transport">
-        <span id="loopTime">0.0s / 12.0s</span>
-        <button class="btn btn-icon" id="playBtn">▶</button>
-        <button class="btn btn-primary" id="exportBtn" disabled>Export</button>
-      </div></header>
-      <div class="workspace">
-        <aside class="sidebar sidebar-left">
-          <div class="panel-title"><span>LAYERS <span id="mediaCount">· 0</span></span><button class="panel-icon-btn" id="shuffleBtn">Shuffle</button></div>
-          <div class="media-drop" id="mediaDrop"><input type="file" id="mediaInput" accept="image/*" multiple hidden><p>+ Add image layer</p></div>
-          <div class="layer-hint">Assets are independent layers. Select a layer to edit its transforms and effects.</div>
-          <div id="mediaList"></div>
-        </aside>
-        <section class="viewport" id="viewport"><canvas id="outputCanvas" class="hidden"></canvas><div class="dropzone" id="dropzone"><p>Drop an image to create a layer</p><span>or use + Add image layer</span></div></section>
-        <aside class="sidebar sidebar-right" id="inspector"></aside>
-      </div>
+
+<div id="app">
+
+  <!-- ── top: project / tools / preview / export ── -->
+  <header class="toolbar">
+    <a class="mark" href="index.html" title="Back to home">
+      <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="2" transform="rotate(45 7 7)" style="fill:var(--accent)"/></svg>
+      FORGE
+    </a>
+
+    <div class="tool-group">
+      <button class="btn btn-sm" id="addImageBtn" title="Add an image layer">+ Image</button>
+      <button class="btn btn-sm" id="addTextBtn" title="Add a text layer">+ Text</button>
+      <button class="btn btn-sm" id="addSolidBtn" title="Add a solid background layer">+ Solid</button>
+      <input type="file" id="imageInput" accept="image/*" multiple hidden>
     </div>
+
+    <div class="tool-group zoom-group">
+      <button class="btn btn-icon btn-sm" id="zoomOutBtn" title="Zoom out">−</button>
+      <span class="readout" id="zoomLabel">100%</span>
+      <button class="btn btn-icon btn-sm" id="zoomInBtn" title="Zoom in">+</button>
+      <button class="btn btn-sm" id="fitBtn" title="Fit to screen (F)">Fit</button>
+    </div>
+
+    <div class="tool-group right">
+      <span class="readout" id="perfReadout" title="Estimated GPU cost · measured frame time">0 · 0ms</span>
+      <button class="btn btn-primary" id="exportBtn">Export</button>
+    </div>
+  </header>
+
+  <div class="body">
+
+    <!-- ── left: scene / layers ── -->
+    <aside class="panel panel-left">
+      <div class="panel-title">SCENE</div>
+      <div id="layerList" class="layer-list"></div>
+      <p class="hint panel-foot">Drag to reorder · double-click to rename · top of list renders in front</p>
+    </aside>
+
+    <!-- ── centre: canvas ── -->
+    <main class="stage-area" id="stageWrap">
+      <div class="stage-holder">
+        <canvas id="stage"></canvas>
+        <div id="overlay" class="stage-overlay"></div>
+      </div>
+      <p class="drop-hint">Drop images anywhere to add them as layers</p>
+    </main>
+
+    <!-- ── right: contextual inspector ── -->
+    <aside class="panel panel-right">
+      <div class="panel-title">INSPECTOR</div>
+      <div id="inspector" class="inspector"></div>
+    </aside>
+
   </div>
+
+  <!-- ── bottom: timeline ── -->
+  <section class="timeline">
+    <div class="transport">
+      <button class="btn btn-icon btn-sm" id="toStartBtn" title="Go to start">⏮</button>
+      <button class="btn btn-icon btn-sm" id="playBtn" title="Play / pause (Space)">▶</button>
+      <button class="btn btn-icon btn-sm" id="toEndBtn" title="Go to end">⏭</button>
+      <span class="readout" id="timeLabel">0.00 / 6.00s</span>
+    </div>
+    <div class="timeline-body" id="timelineBody">
+      <div class="ruler-row">
+        <div class="ruler-spacer"></div>
+        <div class="ruler" id="timelineRuler"></div>
+      </div>
+      <div id="timelineTracks" class="tracks"></div>
+      <div class="playhead" id="playhead"></div>
+    </div>
+  </section>
+
+  <div class="toast" id="toast"></div>
 </div>
-<script src="shell.js"></script>
-<script src="layer-engine.js"></script>
+
+<script src="fx.js"></script>
+<script src="comp.js"></script>
+<script src="ui.js"></script>
 </body>
 </html>
