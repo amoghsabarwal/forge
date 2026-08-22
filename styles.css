@@ -151,7 +151,7 @@
   .shell-bar{ display:flex; align-items:center; gap:18px; padding:10px 18px;
     background:var(--bg-0); border-bottom:1px solid var(--border); flex-shrink:0; }
   .shell-mark{ display:flex; align-items:center; gap:8px; font-family:var(--mono); font-weight:700;
-    font-size:14px; letter-spacing:0.16em; color:var(--text-0); }
+    font-size:14px; letter-spacing:0.16em; color:var(--text-0); text-decoration:none; }
   .shell-mark svg{ display:block; flex-shrink:0; }
   .mode-switch{ display:flex; gap:2px; background:var(--bg-2); border:1px solid var(--border);
     border-radius:9px; padding:3px; }
