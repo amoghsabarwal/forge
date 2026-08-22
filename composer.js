@@ -26,6 +26,8 @@
     loopDuration: 12,
     logo: { enabled:false, img:null, size:16, opacity:100, rotation:0, blend:'source-over', anchor:'br' },
     text: { enabled:false, content:'Studio Deadzolt', size:5, color:'#f2efea', weight:'600', anchor:'bc' },
+    fxStack: [],      // ordered effect instances — see FX_LIBRARY / makeFxInstance
+    fpsCap: 60,       // 0 = uncapped
     exportResMult: 1
   };
 
@@ -48,6 +50,7 @@
   const loopTimeEl = document.getElementById('loopTime');
   const ringFg = document.getElementById('ringFg');
   const toastEl = document.getElementById('toast');
+  let perfReadout = null; // assigned when the inspector builds
 
   function toast(msg, action){
     toastEl.innerHTML = '';
@@ -476,24 +479,163 @@
     }
   `;
 
-  const FX_EFFECTS = [
-    {id:'bloom', label:'Bloom', enabled:false, frag:FX_BLOOM_FRAG,
+  const FX_CHROMATIC_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uAmount; uniform float uFalloff;
+    void main(){
+      vec2 dir = vUv - 0.5;
+      float dist = pow(length(dir)*2.0, uFalloff);
+      vec2 off = dir * uAmount * 0.02 * dist;
+      float r = texture2D(uTex, clamp(vUv+off, 0.0, 1.0)).r;
+      float g = texture2D(uTex, vUv).g;
+      float b = texture2D(uTex, clamp(vUv-off, 0.0, 1.0)).b;
+      gl_FragColor = vec4(r,g,b, 1.0);
+    }
+  `;
+  const FX_PIXELATE_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uSize;
+    void main(){
+      vec2 cells = max(uResolution / max(uSize, 1.0), vec2(1.0));
+      vec2 uv = (floor(vUv * cells) + 0.5) / cells;
+      gl_FragColor = texture2D(uTex, clamp(uv, 0.0, 1.0));
+    }
+  `;
+  const FX_VIGNETTE_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uAmount; uniform float uRadius; uniform float uSoftness;
+    void main(){
+      vec3 color = texture2D(uTex, vUv).rgb;
+      vec2 d = (vUv - 0.5) * vec2(uResolution.x/uResolution.y, 1.0);
+      float v = smoothstep(uRadius, uRadius - max(uSoftness, 0.001), length(d));
+      gl_FragColor = vec4(color * mix(1.0, v, uAmount), 1.0);
+    }
+  `;
+  const FX_SCANLINES_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uCount; uniform float uIntensity; uniform float uSpeed; uniform float uTheta;
+    void main(){
+      vec3 color = texture2D(uTex, vUv).rgb;
+      float line = sin((vUv.y + uTheta*uSpeed*0.16) * uCount * 6.2831853);
+      float s = 1.0 - uIntensity * (0.5 + 0.5*line);
+      gl_FragColor = vec4(color * s, 1.0);
+    }
+  `;
+  const FX_OUTLINE_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uThickness; uniform float uThreshold; uniform float uMix;
+    float lum(vec2 uv){ vec3 c = texture2D(uTex, clamp(uv,0.0,1.0)).rgb; return dot(c, vec3(0.299,0.587,0.114)); }
+    void main(){
+      vec3 base = texture2D(uTex, vUv).rgb;
+      vec2 t = (1.0/uResolution) * uThickness;
+      float gx = lum(vUv+vec2(-t.x,-t.y))*-1.0 + lum(vUv+vec2(t.x,-t.y))*1.0
+               + lum(vUv+vec2(-t.x,0.0))*-2.0 + lum(vUv+vec2(t.x,0.0))*2.0
+               + lum(vUv+vec2(-t.x,t.y))*-1.0 + lum(vUv+vec2(t.x,t.y))*1.0;
+      float gy = lum(vUv+vec2(-t.x,-t.y))*-1.0 + lum(vUv+vec2(-t.x,t.y))*1.0
+               + lum(vUv+vec2(0.0,-t.y))*-2.0 + lum(vUv+vec2(0.0,t.y))*2.0
+               + lum(vUv+vec2(t.x,-t.y))*-1.0 + lum(vUv+vec2(t.x,t.y))*1.0;
+      float edge = smoothstep(uThreshold, uThreshold+0.12, length(vec2(gx,gy)));
+      gl_FragColor = vec4(mix(base, vec3(edge), uMix), 1.0);
+    }
+  `;
+  const FX_GRADE_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uExposure; uniform float uContrast; uniform float uSaturation; uniform float uTemperature;
+    void main(){
+      vec3 c = texture2D(uTex, vUv).rgb;
+      c *= uExposure;
+      c = (c - 0.5) * uContrast + 0.5;
+      float l = dot(c, vec3(0.299,0.587,0.114));
+      c = mix(vec3(l), c, uSaturation);
+      c.r += uTemperature*0.08; c.b -= uTemperature*0.08;
+      gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
+    }
+  `;
+  const FX_RIPPLE_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uAmplitude; uniform float uFrequency; uniform float uSpeed; uniform float uTheta;
+    void main(){
+      vec2 d = vUv - 0.5;
+      float r = length(d);
+      float wave = sin(r*uFrequency - uTheta*uSpeed) * uAmplitude * 0.01;
+      vec2 uv = clamp(vUv + normalize(d + 1e-6) * wave, 0.0, 1.0);
+      gl_FragColor = texture2D(uTex, uv);
+    }
+  `;
+
+  /* Effect *types*. Instances live in state.fxStack — the same type can appear more than
+     once with different settings, which is the whole point of a stack rather than toggles.
+     `cost` is a rough relative GPU weight used by the estimator readout. */
+  const FX_LIBRARY = [
+    {id:'bloom', label:'Bloom', frag:FX_BLOOM_FRAG, cost:14,
       params:[ {key:'threshold',min:0,max:1,step:0.01,default:0.55},
                {key:'intensity',min:0,max:2,step:0.01,default:0.9},
                {key:'radius',min:0.5,max:5,step:0.1,default:2.0} ]},
-    {id:'halftone', label:'Halftone', enabled:false, frag:FX_HALFTONE_FRAG,
+    {id:'halftone', label:'Halftone', frag:FX_HALFTONE_FRAG, cost:8,
       params:[ {key:'scale',min:4,max:40,step:1,default:10,pixelSpace:true},
                {key:'angle',min:0,max:90,step:1,default:15,degrees:true},
                {key:'contrast',min:0.5,max:3,step:0.05,default:1.2} ]},
-    {id:'dither', label:'Dither', enabled:false, frag:FX_DITHER_FRAG,
+    {id:'dither', label:'Dither', frag:FX_DITHER_FRAG, cost:5,
       params:[ {key:'levels',min:2,max:16,step:1,default:4},
                {key:'scale',min:1,max:8,step:1,default:2,pixelSpace:true} ]},
-    {id:'grain', label:'Grain', enabled:false, frag:FX_GRAIN_FRAG,
+    {id:'grain', label:'Grain', frag:FX_GRAIN_FRAG, cost:6, animated:true,
       params:[ {key:'intensity',min:0,max:0.5,step:0.005,default:0.06},
-               {key:'scale',min:1,max:20,step:0.5,default:3,pixelSpace:true} ]}
+               {key:'scale',min:1,max:20,step:0.5,default:3,pixelSpace:true} ]},
+    {id:'chromatic', label:'Chromatic', frag:FX_CHROMATIC_FRAG, cost:4,
+      params:[ {key:'amount',min:0,max:5,step:0.05,default:1.2},
+               {key:'falloff',min:0.5,max:4,step:0.1,default:1.6} ]},
+    {id:'pixelate', label:'Pixelate', frag:FX_PIXELATE_FRAG, cost:3,
+      params:[ {key:'size',min:1,max:60,step:1,default:8,pixelSpace:true} ]},
+    {id:'vignette', label:'Vignette', frag:FX_VIGNETTE_FRAG, cost:3,
+      params:[ {key:'amount',min:0,max:1,step:0.01,default:0.6},
+               {key:'radius',min:0.2,max:1.2,step:0.01,default:0.75},
+               {key:'softness',min:0.05,max:0.8,step:0.01,default:0.35} ]},
+    {id:'scanlines', label:'Scanlines', frag:FX_SCANLINES_FRAG, cost:3, animated:true,
+      params:[ {key:'count',min:20,max:400,step:5,default:160},
+               {key:'intensity',min:0,max:1,step:0.01,default:0.25},
+               {key:'speed',min:0,max:4,step:0.05,default:0.6} ]},
+    {id:'outline', label:'Outline', frag:FX_OUTLINE_FRAG, cost:10,
+      params:[ {key:'thickness',min:0.5,max:5,step:0.1,default:1.4},
+               {key:'threshold',min:0,max:1,step:0.01,default:0.18},
+               {key:'mix',min:0,max:1,step:0.01,default:1.0} ]},
+    {id:'grade', label:'Color grade', frag:FX_GRADE_FRAG, cost:3,
+      params:[ {key:'exposure',min:0.2,max:2.5,step:0.01,default:1.0},
+               {key:'contrast',min:0.3,max:2.5,step:0.01,default:1.0},
+               {key:'saturation',min:0,max:2.5,step:0.01,default:1.0},
+               {key:'temperature',min:-1,max:1,step:0.01,default:0} ]},
+    {id:'ripple', label:'Ripple', frag:FX_RIPPLE_FRAG, cost:5, animated:true,
+      params:[ {key:'amplitude',min:0,max:6,step:0.05,default:1.2},
+               {key:'frequency',min:2,max:80,step:1,default:26},
+               {key:'speed',min:0,max:5,step:0.05,default:1.2} ]}
   ];
 
-  let fxVertShader, fxCopyProgram, fxQuadBuf, fxSourceTex, fxPing, fxPong, fxW=0, fxH=0;
+  function fxTypeById(id){ return FX_LIBRARY.find(f => f.id === id); }
+
+  let _fxUid = 1;
+  function makeFxInstance(typeId){
+    const type = fxTypeById(typeId);
+    if(!type) return null;
+    const params = {};
+    type.params.forEach(p => { params[p.key] = p.default; });
+    return { uid: _fxUid++, typeId, enabled:true, downsample:1, params };
+  }
+
+  let fxVertShader, fxCopyProgram, fxQuadBuf, fxSourceTex, fxW=0, fxH=0;
+  const fxTargets = new Map(); // downsample key -> {ping, pong} FBO pair at that resolution
 
   function fxCompile(src, type){
     const sh = fxgl.createShader(type); fxgl.shaderSource(sh, src); fxgl.compileShader(sh);
@@ -537,11 +679,11 @@
     if(!fxgl) return;
     fxVertShader = fxCompile(FX_VERT, fxgl.VERTEX_SHADER);
     fxCopyProgram = fxBuildProgram(FX_COPY_FRAG);
-    FX_EFFECTS.forEach(fx => {
+    FX_LIBRARY.forEach(fx => {
       fx.program = fxBuildProgram(fx.frag);
       fx.uniforms = { uTex: fxgl.getUniformLocation(fx.program,'uTex'), uResolution: fxgl.getUniformLocation(fx.program,'uResolution') };
-      fx.params.forEach(p => { fx.uniforms[p.key] = fxgl.getUniformLocation(fx.program, 'u'+p.key[0].toUpperCase()+p.key.slice(1)); p.value = p.default; });
-      if(fx.id === 'grain') fx.uniforms.uTheta = fxgl.getUniformLocation(fx.program, 'uTheta');
+      fx.params.forEach(p => { fx.uniforms[p.key] = fxgl.getUniformLocation(fx.program, 'u'+p.key[0].toUpperCase()+p.key.slice(1)); });
+      if(fx.animated) fx.uniforms.uTheta = fxgl.getUniformLocation(fx.program, 'uTheta');
     });
     fxQuadBuf = fxgl.createBuffer();
     fxgl.bindBuffer(fxgl.ARRAY_BUFFER, fxQuadBuf);
@@ -549,15 +691,27 @@
     fxSourceTex = fxCreateTexture(0,0);
   }
 
+  const DOWNSAMPLE_STEPS = [1, 0.75, 0.5, 0.25];
+
+  function fxGetTargets(ds){
+    const key = String(ds);
+    let pair = fxTargets.get(key);
+    if(!pair){
+      const w = Math.max(1, Math.round(fxW*ds)), h = Math.max(1, Math.round(fxH*ds));
+      pair = { ping: fxCreateFBO(w,h), pong: fxCreateFBO(w,h), w, h };
+      fxTargets.set(key, pair);
+    }
+    return pair;
+  }
+
   function fxResize(w,h){
     if(!fxgl) return;
     fxCanvas.width = w; fxCanvas.height = h;
-    fxPing = fxCreateFBO(w,h);
-    fxPong = fxCreateFBO(w,h);
+    fxTargets.clear(); // rebuilt lazily at the new size
     fxW = w; fxH = h;
   }
 
-  function fxHasActive(){ return fxgl && FX_EFFECTS.some(f => f.enabled); }
+  function fxHasActive(){ return fxgl && state.fxStack.some(i => i.enabled); }
 
   function fxRun(sourceCanvas, theta, pixelScaleMult){
     fxgl.pixelStorei(fxgl.UNPACK_FLIP_Y_WEBGL, true);
@@ -565,32 +719,67 @@
     fxgl.texImage2D(fxgl.TEXTURE_2D, 0, fxgl.RGBA, fxgl.RGBA, fxgl.UNSIGNED_BYTE, sourceCanvas);
     fxgl.pixelStorei(fxgl.UNPACK_FLIP_Y_WEBGL, false);
 
-    fxgl.viewport(0,0,fxW,fxH);
-    const active = FX_EFFECTS.filter(f => f.enabled);
-    let srcTex = fxSourceTex, pingIsTarget = true;
+    const active = state.fxStack.filter(i => i.enabled);
+    let srcTex = fxSourceTex, useAlt = false;
 
-    active.forEach((fx, i) => {
-      const isLast = i === active.length-1;
-      const target = isLast ? null : (pingIsTarget ? fxPing : fxPong);
-      fxgl.bindFramebuffer(fxgl.FRAMEBUFFER, target ? target.fbo : null);
-      fxgl.useProgram(fx.program);
+    // Every pass renders into an offscreen target (never straight to the canvas), so a
+    // downsampled *final* pass still gets upscaled correctly by the copy below. Sampling
+    // is by UV, so a smaller target simply costs fewer pixels — the visual scale is
+    // preserved by folding the downsample factor into pixel-space params.
+    active.forEach(inst => {
+      const type = fxTypeById(inst.typeId);
+      if(!type || !type.program) return;
+      const ds = inst.downsample || 1;
+      const pair = fxGetTargets(ds);
+      const target = useAlt ? pair.pong : pair.ping;
+
+      fxgl.bindFramebuffer(fxgl.FRAMEBUFFER, target.fbo);
+      fxgl.viewport(0, 0, pair.w, pair.h);
+      fxgl.useProgram(type.program);
       fxgl.activeTexture(fxgl.TEXTURE0); fxgl.bindTexture(fxgl.TEXTURE_2D, srcTex);
-      fxgl.uniform1i(fx.uniforms.uTex, 0);
-      fxgl.uniform2f(fx.uniforms.uResolution, fxW, fxH);
-      fx.params.forEach(p => {
-        let v = p.degrees ? (p.value*Math.PI/180) : p.value;
-        if(p.pixelSpace) v = v * (pixelScaleMult||1);
-        fxgl.uniform1f(fx.uniforms[p.key], v);
+      fxgl.uniform1i(type.uniforms.uTex, 0);
+      fxgl.uniform2f(type.uniforms.uResolution, pair.w, pair.h);
+      type.params.forEach(p => {
+        let v = inst.params[p.key];
+        if(v == null) v = p.default;
+        if(p.degrees) v = v*Math.PI/180;
+        if(p.pixelSpace) v = v * (pixelScaleMult||1) * ds;
+        fxgl.uniform1f(type.uniforms[p.key], v);
       });
-      if(fx.id === 'grain') fxgl.uniform1f(fx.uniforms.uTheta, theta);
-      fxDrawQuad(fx.program);
-      if(!isLast){ srcTex = target.tex; pingIsTarget = !pingIsTarget; }
+      if(type.animated) fxgl.uniform1f(type.uniforms.uTheta, theta);
+      fxDrawQuad(type.program);
+
+      srcTex = target.tex;
+      useAlt = !useAlt;
     });
+
+    // final copy to the visible canvas at full resolution
+    fxgl.bindFramebuffer(fxgl.FRAMEBUFFER, null);
+    fxgl.viewport(0, 0, fxW, fxH);
+    fxgl.useProgram(fxCopyProgram);
+    fxgl.activeTexture(fxgl.TEXTURE0); fxgl.bindTexture(fxgl.TEXTURE_2D, srcTex);
+    fxgl.uniform1i(fxgl.getUniformLocation(fxCopyProgram,'uTex'), 0);
+    fxDrawQuad(fxCopyProgram);
+  }
+
+  // Rough relative estimate, in the spirit of a cost readout: each pass costs its type
+  // weight scaled by the pixels it actually renders (downsample is quadratic).
+  function fxCostScore(){
+    let score = 0;
+    state.fxStack.forEach(inst => {
+      if(!inst.enabled) return;
+      const type = fxTypeById(inst.typeId);
+      if(!type) return;
+      const ds = inst.downsample || 1;
+      score += type.cost * ds * ds;
+    });
+    return Math.min(100, Math.round(score * 2.2));
   }
 
   /* ================= animation ================= */
 
   let isPlaying = false, sessionStart = 0, pausedElapsed = 0, exporting = false;
+  let lastDrawAt = 0, frameMs = 16.7; // rolling frame cost, shown in the perf readout
 
   function currentElapsed(now){ return isPlaying ? pausedElapsed + (now-sessionStart)/1000 : pausedElapsed; }
 
@@ -598,6 +787,15 @@
     requestAnimationFrame(render);
     if(window.FORGE_MODE !== 'shaders') return;
     if(images.length === 0) return;
+
+    // Frame-rate cap: ambient motion rarely needs 60fps, and halving the frame rate halves
+    // GPU work per second. Never capped while exporting — the recorder needs every frame.
+    if(!exporting && state.fpsCap > 0){
+      const minGap = 1000/state.fpsCap - 1.5; // small slack so we don't skip a whole frame
+      if(now - lastDrawAt < minGap) return;
+    }
+    const drawStart = now;
+    lastDrawAt = now;
 
     const duration = Math.max(1, state.loopDuration);
     const elapsed = currentElapsed(now);
@@ -693,6 +891,9 @@
     const progress = phase/duration;
     ringFg.style.strokeDashoffset = String(RING_CIRC * (1-progress));
     loopTimeEl.textContent = phase.toFixed(1) + 's / ' + duration.toFixed(1) + 's';
+
+    frameMs = frameMs*0.9 + (performance.now()-drawStart)*0.1;
+    if(perfReadout) perfReadout.textContent = fxCostScore() + ' · ' + Math.round(frameMs) + 'ms';
   }
 
   function drawLogo(){
@@ -1155,36 +1356,160 @@
 
     inspector.appendChild(logoGroup);
 
-    // EFFECTS
+    // EFFECTS — an ordered stack of instances, not a fixed set of toggles.
+    // The same effect can appear more than once, order is editable, and each instance
+    // carries its own downsample so soft effects can render cheap.
     const fxGroup = el('div','group on');
-    fxGroup.appendChild(el('div','group-name','EFFECTS'));
-    FX_EFFECTS.forEach(fx => {
-      const card = el('div','group'+(fx.enabled?' on':''));
-      card.style.margin = '8px 0 0'; card.style.padding='10px';
-      const head = el('div','group-head'); head.style.marginBottom = fx.enabled ? '8px' : '0';
-      head.appendChild(el('span','group-name', fx.label));
+    const fxHead = el('div','group-head');
+    fxHead.appendChild(el('span','group-name','EFFECT STACK'));
+    perfReadout = el('span','perf-readout', fxCostScore() + ' · ' + Math.round(frameMs) + 'ms');
+    perfReadout.title = 'Estimated GPU cost score · measured frame time';
+    fxHead.appendChild(perfReadout);
+    fxGroup.appendChild(fxHead);
+
+    if(state.fxStack.length === 0){
+      const empty = el('p','stack-empty','No effects yet — add one below.');
+      fxGroup.appendChild(empty);
+    }
+
+    state.fxStack.forEach((inst, idx) => {
+      const type = fxTypeById(inst.typeId);
+      if(!type) return;
+      const card = el('div','group fx-card'+(inst.enabled?' on':''));
+
+      const head = el('div','group-head');
+      const nameWrap = el('span','fx-name');
+      nameWrap.appendChild(el('span','fx-index', String(idx+1)));
+      nameWrap.appendChild(document.createTextNode(type.label));
+      head.appendChild(nameWrap);
+
+      const tools = el('span','fx-tools');
+      function toolBtn(label, title, onClick, disabled){
+        const b = el('button','panel-icon-btn', label);
+        b.title = title;
+        if(disabled) b.disabled = true;
+        b.addEventListener('click', onClick);
+        tools.appendChild(b);
+      }
+      toolBtn('↑','Move up', () => {
+        if(idx===0) return;
+        [state.fxStack[idx-1], state.fxStack[idx]] = [state.fxStack[idx], state.fxStack[idx-1]];
+        buildInspector();
+      }, idx===0);
+      toolBtn('↓','Move down', () => {
+        if(idx===state.fxStack.length-1) return;
+        [state.fxStack[idx+1], state.fxStack[idx]] = [state.fxStack[idx], state.fxStack[idx+1]];
+        buildInspector();
+      }, idx===state.fxStack.length-1);
+      toolBtn('⧉','Duplicate', () => {
+        const copy = JSON.parse(JSON.stringify(inst));
+        copy.uid = _fxUid++;
+        state.fxStack.splice(idx+1, 0, copy);
+        buildInspector();
+      });
+      toolBtn('×','Remove', () => {
+        const [removed] = state.fxStack.splice(idx,1);
+        buildInspector();
+        toast(type.label + ' removed.', { label:'Undo', onClick: () => {
+          state.fxStack.splice(Math.min(idx, state.fxStack.length), 0, removed);
+          buildInspector();
+        }});
+      });
+      head.appendChild(tools);
+
       const sw = el('label','switch');
-      const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = fx.enabled;
-      cb.addEventListener('change', () => { fx.enabled = cb.checked; card.classList.toggle('on', fx.enabled); head.style.marginBottom = fx.enabled?'8px':'0'; body.style.display = fx.enabled?'block':'none'; });
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = inst.enabled;
+      cb.addEventListener('change', () => {
+        inst.enabled = cb.checked;
+        card.classList.toggle('on', inst.enabled);
+        body.style.display = inst.enabled ? 'block' : 'none';
+      });
       sw.appendChild(cb); sw.appendChild(el('span','track')); sw.appendChild(el('span','thumb'));
       head.appendChild(sw);
       card.appendChild(head);
-      const body = el('div'); body.style.display = fx.enabled ? 'block' : 'none';
-      fx.params.forEach(pm => {
+
+      const body = el('div');
+      body.style.display = inst.enabled ? 'block' : 'none';
+
+      type.params.forEach(pm => {
         const row = el('div','param-row');
         const lab = el('div','param-label'); lab.appendChild(el('b',null,pm.key));
-        const span = el('span',null, formatNum(pm.value, pm.step) + (pm.degrees?'°':''));
+        const cur = inst.params[pm.key] != null ? inst.params[pm.key] : pm.default;
+        const span = el('span',null, formatNum(cur, pm.step) + (pm.degrees?'°':''));
         lab.appendChild(span);
         const input = document.createElement('input');
-        input.type='range'; input.min=pm.min; input.max=pm.max; input.step=pm.step; input.value=pm.value;
-        input.addEventListener('input', () => { pm.value = parseFloat(input.value); span.textContent = formatNum(pm.value, pm.step)+(pm.degrees?'°':''); });
+        input.type='range'; input.min=pm.min; input.max=pm.max; input.step=pm.step; input.value=cur;
+        input.addEventListener('input', () => {
+          inst.params[pm.key] = parseFloat(input.value);
+          span.textContent = formatNum(inst.params[pm.key], pm.step)+(pm.degrees?'°':'');
+        });
         row.appendChild(lab); row.appendChild(input);
         body.appendChild(row);
       });
+
+      // per-effect downsample — the single biggest perf lever for soft effects
+      const dsRow = el('div','param-row');
+      const dsLab = el('div','param-label');
+      dsLab.appendChild(el('b',null,'render at'));
+      dsRow.appendChild(dsLab);
+      const dsSeg = el('div','segmented');
+      DOWNSAMPLE_STEPS.forEach(d => {
+        const b = el('button','seg-btn'+(Math.abs(d-(inst.downsample||1))<0.001?' active':''), d===1 ? 'Full' : (d*100)+'%');
+        b.addEventListener('click', () => {
+          inst.downsample = d;
+          [...dsSeg.children].forEach(c=>c.classList.remove('active'));
+          b.classList.add('active');
+        });
+        dsSeg.appendChild(b);
+      });
+      dsRow.appendChild(dsSeg);
+      body.appendChild(dsRow);
+
       card.appendChild(body);
       fxGroup.appendChild(card);
     });
+
+    const addRow = el('div','param-row'); addRow.style.marginTop = '10px';
+    const addSelect = document.createElement('select');
+    addSelect.className = 'select-input';
+    const placeholder = document.createElement('option');
+    placeholder.value = ''; placeholder.textContent = '+ Add effect…'; placeholder.selected = true;
+    addSelect.appendChild(placeholder);
+    FX_LIBRARY.forEach(type => {
+      const opt = document.createElement('option');
+      opt.value = type.id; opt.textContent = type.label;
+      addSelect.appendChild(opt);
+    });
+    addSelect.addEventListener('change', () => {
+      if(!addSelect.value) return;
+      const inst = makeFxInstance(addSelect.value);
+      if(inst) state.fxStack.push(inst);
+      buildInspector();
+    });
+    addRow.appendChild(addSelect);
+    fxGroup.appendChild(addRow);
     inspector.appendChild(fxGroup);
+
+    // PERFORMANCE
+    const perfGroup = el('div','group on');
+    perfGroup.appendChild(el('div','group-name','PERFORMANCE'));
+    const fpsRow = el('div','param-row');
+    fpsRow.appendChild(el('div','param-label').appendChild(el('b',null,'frame rate')).parentNode);
+    const fpsSeg = el('div','segmented');
+    [[24,'24'],[30,'30'],[60,'60'],[0,'Max']].forEach(([v,label]) => {
+      const b = el('button','seg-btn'+(v===state.fpsCap?' active':''), label);
+      b.addEventListener('click', () => {
+        state.fpsCap = v;
+        [...fpsSeg.children].forEach(c=>c.classList.remove('active'));
+        b.classList.add('active');
+      });
+      fpsSeg.appendChild(b);
+    });
+    fpsRow.appendChild(fpsSeg);
+    perfGroup.appendChild(fpsRow);
+    const perfNote = el('p','stack-empty','Export always records at full frame rate.');
+    perfGroup.appendChild(perfNote);
+    inspector.appendChild(perfGroup);
 
     // EXPORT
     const exportGroup = el('div','group on');
@@ -1283,7 +1608,7 @@
 
   /* ================= settings autosave (style/timing only — images are never persisted) ================= */
 
-  const SETTINGS_KEY = 'forge:composer:settings:v1';
+  const SETTINGS_KEY = 'forge:composer:settings:v2'; // v2: effects are a stack, not fixed toggles
 
   function serializeSettings(){
     return {
@@ -1295,7 +1620,8 @@
       logo: { enabled:state.logo.enabled, size:state.logo.size, opacity:state.logo.opacity, rotation:state.logo.rotation, blend:state.logo.blend, anchor:state.logo.anchor },
       text: { enabled:state.text.enabled, content:state.text.content, size:state.text.size, color:state.text.color, weight:state.text.weight, anchor:state.text.anchor },
       exportResMult: state.exportResMult,
-      fx: FX_EFFECTS.map(f => ({ id:f.id, enabled:f.enabled, params: f.params.map(p => ({key:p.key, value:p.value})) }))
+      fpsCap: state.fpsCap,
+      fxStack: state.fxStack.map(i => ({ typeId:i.typeId, enabled:i.enabled, downsample:i.downsample, params:Object.assign({}, i.params) }))
     };
   }
 
@@ -1310,23 +1636,21 @@
       if(saved.logo) Object.assign(state.logo, saved.logo);
       if(saved.text) Object.assign(state.text, saved.text);
       if(typeof saved.exportResMult === 'number') state.exportResMult = saved.exportResMult;
+      if(typeof saved.fpsCap === 'number') state.fpsCap = saved.fpsCap;
+      if(Array.isArray(saved.fxStack)){
+        state.fxStack = saved.fxStack.map(s => {
+          const inst = makeFxInstance(s.typeId);
+          if(!inst) return null;
+          inst.enabled = !!s.enabled;
+          inst.downsample = typeof s.downsample === 'number' ? s.downsample : 1;
+          if(s.params) Object.keys(inst.params).forEach(k => {
+            if(typeof s.params[k] === 'number') inst.params[k] = s.params[k];
+          });
+          return inst;
+        }).filter(Boolean);
+      }
       return true;
     } catch(err){ console.warn('Forge: could not restore saved settings', err); return false; }
-  }
-
-  // fx param defaults are assigned inside initFx(), so this must run AFTER initFx()
-  // or its restored values would immediately get clobbered back to defaults.
-  function applyFxSettings(saved){
-    if(!saved || !Array.isArray(saved.fx)) return;
-    saved.fx.forEach(savedFx => {
-      const fx = FX_EFFECTS.find(f => f.id === savedFx.id);
-      if(!fx) return;
-      fx.enabled = !!savedFx.enabled;
-      (savedFx.params||[]).forEach(sp => {
-        const pm = fx.params.find(p => p.key === sp.key);
-        if(pm && typeof sp.value === 'number') pm.value = sp.value;
-      });
-    });
   }
 
   function loadSavedSettings(){
@@ -1349,7 +1673,6 @@
 
   initThree();
   initFx();
-  applyFxSettings(savedSettings);
   buildInspector();
   requestAnimationFrame(render);
 

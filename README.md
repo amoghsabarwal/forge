@@ -4,7 +4,7 @@ A browser-based procedural tool for turning a body of design work into an animat
 
 Two modes, switchable from the top bar:
 
-- **Shaders** — compose many images into a Wall, Globe, or Tunnel, then fly a camera through it with scripted holds on each piece (not ambient spin — an actual reel with beats). Add a logo, title text, a color/gradient/image background, and a Bloom / Halftone / Dither / Grain effects pass on top of the whole scene. Export as a looping WebM, at up to 3× the preview resolution.
+- **Shaders** — compose many images into a Wall, Globe, or Tunnel, then fly a camera through it with scripted holds on each piece (not ambient spin — an actual reel with beats). Add a logo, title text, a color/gradient/image background, and a stack of post effects on top of the whole scene. Export as a looping WebM, at up to 3× the preview resolution.
 - **Particles** — turn a single image into a field of thousands of independently-animating colored points — each one moves on its own phase, not in lockstep. Tune density, color quantization, jitter/pulse/scatter, and export the loop.
 
 ## Running it
@@ -37,6 +37,17 @@ Working prototype, built iteratively. A few things worth knowing before you rely
 - **The effects pass in Shaders mode is real-time, not offline-rendered.** Stacking several effects at a 3× export multiplier will drop frames rather than corrupt the export — it'll just look choppier, not broken.
 - **Focus points fix cropping, not camera framing.** In Shaders mode, a per-image focus point changes what part of the photo gets cropped into its card, but the flythrough camera still centers on the card's position, not the subject inside it.
 - **Density and color changes in Particles mode require regenerating the whole particle set** from the source image — those sliders are debounced so dragging doesn't stutter, but there's a brief rebuild pause after release, unlike the motion sliders which are instant.
+
+## Effect stack
+
+Effects are an ordered stack of instances rather than a fixed set of toggles: add the same effect twice with different settings, reorder it, duplicate it, or disable one without losing its values. Eleven effect types ship today — Bloom, Halftone, Dither, Grain, Chromatic, Pixelate, Vignette, Scanlines, Outline, Color grade, and Ripple.
+
+Two things keep it fast:
+
+- **Per-effect downsample.** Each instance renders at Full / 75% / 50% / 25%. Halving the resolution is 75% fewer pixels to shade, and anything soft (bloom, vignette, grain) usually looks identical at 50%.
+- **Frame-rate cap.** 24 / 30 / 60 / Max. Ambient motion rarely needs 60fps, and halving the frame rate halves GPU work per second. Export always records at full rate regardless of this setting.
+
+The readout next to EFFECT STACK shows an estimated cost score and the measured frame time, so the effect of both levers is visible while you build.
 
 ## Keyboard shortcuts
 
