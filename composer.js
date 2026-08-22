@@ -580,6 +580,82 @@
   /* Effect *types*. Instances live in state.fxStack — the same type can appear more than
      once with different settings, which is the whole point of a stack rather than toggles.
      `cost` is a rough relative GPU weight used by the estimator readout. */
+  const FX_ASCII_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform sampler2D uAtlas;
+    uniform float uCell; uniform float uChars; uniform float uColor; uniform float uContrast;
+    void main(){
+      vec2 cells = max(uResolution / max(uCell, 3.0), vec2(1.0));
+      vec2 cellIdx = floor(vUv * cells);
+      vec2 cellUv  = fract(vUv * cells);
+      vec3 c = texture2D(uTex, clamp((cellIdx + 0.5)/cells, 0.0, 1.0)).rgb;
+      float l = dot(c, vec3(0.299,0.587,0.114));
+      l = clamp((l - 0.5)*uContrast + 0.5, 0.0, 1.0);
+      float idx = floor(l * (uChars - 0.001));
+      vec2 auv = vec2((idx + cellUv.x)/uChars, cellUv.y);
+      float glyph = texture2D(uAtlas, auv).r;
+      gl_FragColor = vec4(mix(vec3(glyph), c*glyph, uColor), 1.0);
+    }
+  `;
+  const FX_CONTOUR_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uLevels; uniform float uThickness; uniform float uFade; uniform float uIntensity;
+    float band(vec2 uv){
+      vec3 c = texture2D(uTex, clamp(uv, 0.0, 1.0)).rgb;
+      return floor(dot(c, vec3(0.299,0.587,0.114)) * uLevels);
+    }
+    void main(){
+      vec2 t = (1.0/uResolution) * uThickness;
+      float b = band(vUv);
+      float e = abs(band(vUv+vec2(t.x,0.0)) - b) + abs(band(vUv+vec2(0.0,t.y)) - b);
+      float line = step(0.5, e);
+      vec3 base = texture2D(uTex, vUv).rgb;
+      gl_FragColor = vec4(base*uFade + line*uIntensity, 1.0);
+    }
+  `;
+  const FX_METABALL_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uSize; uniform float uSpeed; uniform float uStrength; uniform float uGlow; uniform float uTheta;
+    void main(){
+      vec2 p = (vUv - 0.5) * vec2(uResolution.x/uResolution.y, 1.0);
+      float f = 0.0;
+      for(int i=0;i<6;i++){
+        float fi = float(i);
+        vec2 c = vec2(sin(uTheta*uSpeed + fi*1.7)*0.34, cos(uTheta*uSpeed*0.8 + fi*2.3)*0.30);
+        vec2 d = p - c;
+        f += (uSize*uSize) / (dot(d,d) + 0.0004);
+      }
+      float m = smoothstep(1.0, 1.7, f);
+      vec2 off = normalize(p + 1e-6) * m * uStrength * 0.06;
+      vec3 col = texture2D(uTex, clamp(vUv - off, 0.0, 1.0)).rgb;
+      col += m * uGlow * 0.35;
+      gl_FragColor = vec4(clamp(col, 0.0, 1.0), 1.0);
+    }
+  `;
+  const FX_GRID_FRAG = `
+    precision highp float;
+    varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uCells; uniform float uSpeed; uniform float uThickness; uniform float uWarp;
+    uniform float uIntensity; uniform float uTheta;
+    void main(){
+      vec2 g = vUv * uCells + vec2(uTheta*uSpeed*0.16, uTheta*uSpeed*0.09);
+      vec2 cell = floor(g);
+      float r = fract(sin(dot(cell, vec2(12.9898,78.233))) * 43758.5453);
+      vec2 off = vec2(sin(uTheta*uSpeed + r*6.2831853), cos(uTheta*uSpeed*0.7 + r*6.2831853)) * uWarp * 0.008;
+      vec3 base = texture2D(uTex, clamp(vUv + off, 0.0, 1.0)).rgb;
+      vec2 f = abs(fract(g) - 0.5);
+      float line = 1.0 - smoothstep(0.0, max(uThickness,0.001)*0.06, min(f.x, f.y));
+      gl_FragColor = vec4(clamp(base + line*uIntensity, 0.0, 1.0), 1.0);
+    }
+  `;
+
   const FX_LIBRARY = [
     {id:'bloom', label:'Bloom', frag:FX_BLOOM_FRAG, cost:14,
       params:[ {key:'threshold',min:0,max:1,step:0.01,default:0.55},
@@ -620,7 +696,27 @@
     {id:'ripple', label:'Ripple', frag:FX_RIPPLE_FRAG, cost:5, animated:true,
       params:[ {key:'amplitude',min:0,max:6,step:0.05,default:1.2},
                {key:'frequency',min:2,max:80,step:1,default:26},
-               {key:'speed',min:0,max:5,step:0.05,default:1.2} ]}
+               {key:'speed',min:0,max:5,step:0.05,default:1.2} ]},
+    {id:'ascii', label:'ASCII', frag:FX_ASCII_FRAG, cost:7, atlas:true,
+      params:[ {key:'cell',min:4,max:40,step:1,default:10,pixelSpace:true},
+               {key:'contrast',min:0.5,max:3,step:0.05,default:1.3},
+               {key:'color',min:0,max:1,step:0.01,default:0.0} ]},
+    {id:'contour', label:'Contour', frag:FX_CONTOUR_FRAG, cost:9,
+      params:[ {key:'levels',min:2,max:40,step:1,default:12},
+               {key:'thickness',min:0.5,max:4,step:0.1,default:1.2},
+               {key:'fade',min:0,max:1,step:0.01,default:0.35},
+               {key:'intensity',min:0,max:2,step:0.01,default:0.9} ]},
+    {id:'metaball', label:'Blobs', frag:FX_METABALL_FRAG, cost:12, animated:true,
+      params:[ {key:'size',min:0.05,max:0.6,step:0.01,default:0.22},
+               {key:'speed',min:0,max:4,step:0.05,default:1.0},
+               {key:'strength',min:0,max:3,step:0.05,default:1.0},
+               {key:'glow',min:0,max:1,step:0.01,default:0.15} ]},
+    {id:'grid', label:'Animated grid', frag:FX_GRID_FRAG, cost:6, animated:true,
+      params:[ {key:'cells',min:2,max:60,step:1,default:16},
+               {key:'speed',min:0,max:4,step:0.05,default:0.7},
+               {key:'thickness',min:0.2,max:4,step:0.1,default:1.0},
+               {key:'warp',min:0,max:4,step:0.05,default:0.8},
+               {key:'intensity',min:0,max:1.5,step:0.01,default:0.35} ]}
   ];
 
   function fxTypeById(id){ return FX_LIBRARY.find(f => f.id === id); }
@@ -631,7 +727,9 @@
     if(!type) return null;
     const params = {};
     type.params.forEach(p => { params[p.key] = p.default; });
-    return { uid: _fxUid++, typeId, enabled:true, downsample:1, params };
+    const anim = {};
+    type.params.forEach(p => { anim[p.key] = { on:false, amount:0.4, speed:1, wave:'sine', phase:0 }; });
+    return { uid: _fxUid++, typeId, enabled:true, downsample:1, params, anim };
   }
 
   let fxVertShader, fxCopyProgram, fxQuadBuf, fxSourceTex, fxW=0, fxH=0;
@@ -675,15 +773,47 @@
     fxgl.drawArrays(fxgl.TRIANGLES, 0, 3);
   }
 
+  // ASCII needs a glyph atlas: one row of characters ordered sparse → dense, so a pixel's
+  // luminance can index straight into a character. Built on a canvas at runtime rather than
+  // shipped as an image, so the ramp stays editable and there's no asset to load.
+  const ASCII_RAMP = " .:-=+*#%@";
+  function buildAsciiAtlas(){
+    const cell = 32, n = ASCII_RAMP.length;
+    const c = document.createElement('canvas');
+    c.width = cell*n; c.height = cell;
+    const g = c.getContext('2d');
+    g.fillStyle = '#000'; g.fillRect(0,0,c.width,c.height);
+    g.fillStyle = '#fff';
+    g.font = '600 ' + Math.round(cell*0.82) + 'px ' + 'JetBrains Mono, ui-monospace, monospace';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    for(let i=0;i<n;i++) g.fillText(ASCII_RAMP[i], i*cell + cell/2, cell/2 + 1);
+    const tex = fxgl.createTexture();
+    fxgl.bindTexture(fxgl.TEXTURE_2D, tex);
+    fxgl.pixelStorei(fxgl.UNPACK_FLIP_Y_WEBGL, true); // match the source texture's orientation
+    fxgl.texImage2D(fxgl.TEXTURE_2D, 0, fxgl.RGBA, fxgl.RGBA, fxgl.UNSIGNED_BYTE, c);
+    fxgl.pixelStorei(fxgl.UNPACK_FLIP_Y_WEBGL, false);
+    fxgl.texParameteri(fxgl.TEXTURE_2D, fxgl.TEXTURE_WRAP_S, fxgl.CLAMP_TO_EDGE);
+    fxgl.texParameteri(fxgl.TEXTURE_2D, fxgl.TEXTURE_WRAP_T, fxgl.CLAMP_TO_EDGE);
+    fxgl.texParameteri(fxgl.TEXTURE_2D, fxgl.TEXTURE_MIN_FILTER, fxgl.LINEAR);
+    fxgl.texParameteri(fxgl.TEXTURE_2D, fxgl.TEXTURE_MAG_FILTER, fxgl.LINEAR);
+    return {tex, count:n};
+  }
+  let asciiAtlas = null;
+
   function initFx(){
     if(!fxgl) return;
     fxVertShader = fxCompile(FX_VERT, fxgl.VERTEX_SHADER);
     fxCopyProgram = fxBuildProgram(FX_COPY_FRAG);
+    asciiAtlas = buildAsciiAtlas();
     FX_LIBRARY.forEach(fx => {
       fx.program = fxBuildProgram(fx.frag);
       fx.uniforms = { uTex: fxgl.getUniformLocation(fx.program,'uTex'), uResolution: fxgl.getUniformLocation(fx.program,'uResolution') };
       fx.params.forEach(p => { fx.uniforms[p.key] = fxgl.getUniformLocation(fx.program, 'u'+p.key[0].toUpperCase()+p.key.slice(1)); });
       if(fx.animated) fx.uniforms.uTheta = fxgl.getUniformLocation(fx.program, 'uTheta');
+      if(fx.atlas){
+        fx.uniforms.uAtlas = fxgl.getUniformLocation(fx.program, 'uAtlas');
+        fx.uniforms.uChars = fxgl.getUniformLocation(fx.program, 'uChars');
+      }
     });
     fxQuadBuf = fxgl.createBuffer();
     fxgl.bindBuffer(fxgl.ARRAY_BUFFER, fxQuadBuf);
@@ -713,6 +843,40 @@
 
   function fxHasActive(){ return fxgl && state.fxStack.some(i => i.enabled); }
 
+  /* Per-parameter animation. Any param on any effect can be driven by an oscillator over
+     the loop, which is what turns "dither" into "animated dither" without needing a
+     separate effect for each. Phase is derived from loop position (theta), so whatever a
+     param does, it does seamlessly across the loop point. */
+  const FX_WAVES = [
+    {id:'sine',     label:'Sine',     fn: t => Math.sin(t)},
+    {id:'triangle', label:'Triangle', fn: t => 2/Math.PI * Math.asin(Math.sin(t))},
+    {id:'saw',      label:'Saw',      fn: t => 2*(t/(2*Math.PI) - Math.floor(t/(2*Math.PI) + 0.5))},
+    {id:'pulse',    label:'Pulse',    fn: t => Math.sin(t) >= 0 ? 1 : -1},
+    {id:'noise',    label:'Noise',    fn: t => {
+      // value noise: smooth random walk that still returns to its start each loop
+      const x = t/(2*Math.PI)*8;
+      const i = Math.floor(x), f = x - i;
+      const h = n => { const s = Math.sin(n*127.1)*43758.5453; return 2*(s - Math.floor(s)) - 1; };
+      const u = f*f*(3-2*f);
+      return h(i)*(1-u) + h(i+1)*u;
+    }}
+  ];
+  function fxWaveFn(id){ const w = FX_WAVES.find(x => x.id === id); return w ? w.fn : FX_WAVES[0].fn; }
+
+  // Resolve a param's value at this moment: base value, plus its oscillator if enabled.
+  function fxParamValue(inst, spec, theta){
+    let v = inst.params[spec.key];
+    if(v == null) v = spec.default;
+    const a = inst.anim && inst.anim[spec.key];
+    if(a && a.on && a.amount > 0){
+      const range = spec.max - spec.min;
+      const osc = fxWaveFn(a.wave)(theta * (a.speed || 1) + (a.phase || 0));
+      v = v + osc * a.amount * range * 0.5;
+      v = Math.max(spec.min, Math.min(spec.max, v));
+    }
+    return v;
+  }
+
   function fxRun(sourceCanvas, theta, pixelScaleMult){
     fxgl.pixelStorei(fxgl.UNPACK_FLIP_Y_WEBGL, true);
     fxgl.bindTexture(fxgl.TEXTURE_2D, fxSourceTex);
@@ -740,13 +904,19 @@
       fxgl.uniform1i(type.uniforms.uTex, 0);
       fxgl.uniform2f(type.uniforms.uResolution, pair.w, pair.h);
       type.params.forEach(p => {
-        let v = inst.params[p.key];
-        if(v == null) v = p.default;
+        let v = fxParamValue(inst, p, theta);
         if(p.degrees) v = v*Math.PI/180;
         if(p.pixelSpace) v = v * (pixelScaleMult||1) * ds;
         fxgl.uniform1f(type.uniforms[p.key], v);
       });
       if(type.animated) fxgl.uniform1f(type.uniforms.uTheta, theta);
+      if(type.atlas && asciiAtlas){
+        fxgl.activeTexture(fxgl.TEXTURE1);
+        fxgl.bindTexture(fxgl.TEXTURE_2D, asciiAtlas.tex);
+        fxgl.uniform1i(type.uniforms.uAtlas, 1);
+        fxgl.uniform1f(type.uniforms.uChars, asciiAtlas.count);
+        fxgl.activeTexture(fxgl.TEXTURE0);
+      }
       fxDrawQuad(type.program);
 
       srcTex = target.tex;
@@ -1433,17 +1603,69 @@
 
       type.params.forEach(pm => {
         const row = el('div','param-row');
-        const lab = el('div','param-label'); lab.appendChild(el('b',null,pm.key));
+        const lab = el('div','param-label');
+        lab.appendChild(el('b',null,pm.key));
         const cur = inst.params[pm.key] != null ? inst.params[pm.key] : pm.default;
-        const span = el('span',null, formatNum(cur, pm.step) + (pm.degrees?'°':''));
-        lab.appendChild(span);
+        const right = el('span','param-right');
+        const valSpan = el('span',null, formatNum(cur, pm.step) + (pm.degrees?'°':''));
+        right.appendChild(valSpan);
+        const animState = inst.anim[pm.key] || (inst.anim[pm.key] = { on:false, amount:0.4, speed:1, wave:'sine', phase:0 });
+        const animBtn = el('button','anim-btn'+(animState.on?' on':''), '∿');
+        animBtn.title = 'Animate this parameter over the loop';
+        right.appendChild(animBtn);
+        lab.appendChild(right);
+
         const input = document.createElement('input');
         input.type='range'; input.min=pm.min; input.max=pm.max; input.step=pm.step; input.value=cur;
         input.addEventListener('input', () => {
           inst.params[pm.key] = parseFloat(input.value);
-          span.textContent = formatNum(inst.params[pm.key], pm.step)+(pm.degrees?'°':'');
+          valSpan.textContent = formatNum(inst.params[pm.key], pm.step)+(pm.degrees?'°':'');
         });
         row.appendChild(lab); row.appendChild(input);
+
+        // oscillator controls, revealed only when this param is animated
+        const animBox = el('div','anim-box');
+        animBox.style.display = animState.on ? 'block' : 'none';
+
+        const waveRow = el('div','anim-row');
+        const waveSel = document.createElement('select');
+        waveSel.className = 'select-input anim-select';
+        FX_WAVES.forEach(w => {
+          const o = document.createElement('option');
+          o.value = w.id; o.textContent = w.label;
+          if(w.id === animState.wave) o.selected = true;
+          waveSel.appendChild(o);
+        });
+        waveSel.addEventListener('change', () => { animState.wave = waveSel.value; });
+        waveRow.appendChild(waveSel);
+        animBox.appendChild(waveRow);
+
+        function miniSlider(label, key, min, max, step){
+          const r = el('div','param-row anim-mini');
+          const l = el('div','param-label');
+          l.appendChild(el('b',null,label));
+          const s = el('span',null, formatNum(animState[key], step));
+          l.appendChild(s);
+          const inp = document.createElement('input');
+          inp.type='range'; inp.min=min; inp.max=max; inp.step=step; inp.value=animState[key];
+          inp.addEventListener('input', () => {
+            animState[key] = parseFloat(inp.value);
+            s.textContent = formatNum(animState[key], step);
+          });
+          r.appendChild(l); r.appendChild(inp);
+          animBox.appendChild(r);
+        }
+        miniSlider('amount','amount',0,1,0.01);
+        miniSlider('speed','speed',0.25,8,0.25);
+        miniSlider('phase','phase',0,6.28,0.01);
+
+        animBtn.addEventListener('click', () => {
+          animState.on = !animState.on;
+          animBtn.classList.toggle('on', animState.on);
+          animBox.style.display = animState.on ? 'block' : 'none';
+        });
+
+        row.appendChild(animBox);
         body.appendChild(row);
       });
 
@@ -1621,7 +1843,8 @@
       text: { enabled:state.text.enabled, content:state.text.content, size:state.text.size, color:state.text.color, weight:state.text.weight, anchor:state.text.anchor },
       exportResMult: state.exportResMult,
       fpsCap: state.fpsCap,
-      fxStack: state.fxStack.map(i => ({ typeId:i.typeId, enabled:i.enabled, downsample:i.downsample, params:Object.assign({}, i.params) }))
+      fxStack: state.fxStack.map(i => ({ typeId:i.typeId, enabled:i.enabled, downsample:i.downsample,
+        params:Object.assign({}, i.params), anim:JSON.parse(JSON.stringify(i.anim||{})) }))
     };
   }
 
@@ -1645,6 +1868,9 @@
           inst.downsample = typeof s.downsample === 'number' ? s.downsample : 1;
           if(s.params) Object.keys(inst.params).forEach(k => {
             if(typeof s.params[k] === 'number') inst.params[k] = s.params[k];
+          });
+          if(s.anim) Object.keys(inst.anim).forEach(k => {
+            if(s.anim[k]) Object.assign(inst.anim[k], s.anim[k]);
           });
           return inst;
         }).filter(Boolean);

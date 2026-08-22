@@ -171,6 +171,23 @@
   .fx-tools .panel-icon-btn:disabled{ opacity:0.3; cursor:default; }
   .fx-tools .panel-icon-btn:disabled:hover{ color:var(--text-2); border-color:var(--border); background:transparent; }
 
+  /* ---- per-parameter animation ---- */
+  .param-right{ display:flex; align-items:center; gap:6px; }
+  .anim-btn{ font-family:var(--mono); font-size:11px; line-height:1; color:var(--text-2);
+    background:transparent; border:1px solid var(--border); border-radius:4px; padding:2px 5px;
+    cursor:pointer; transition:color .15s, border-color .15s, background .15s; }
+  .anim-btn:hover{ color:var(--text-0); border-color:#3a3531; }
+  .anim-btn.on{ color:var(--accent); border-color:var(--accent); background:rgba(255,90,31,0.10); }
+  .anim-box{ margin:8px 0 2px; padding:8px 9px; border-left:2px solid var(--accent-dim);
+    background:rgba(255,90,31,0.035); border-radius:0 5px 5px 0; }
+  .anim-row{ margin-bottom:8px; }
+  .anim-select{ font-size:11px; padding:5px; }
+  .param-row.anim-mini{ margin-bottom:7px; }
+  .param-row.anim-mini:last-child{ margin-bottom:0; }
+  .anim-mini .param-label{ font-size:9.5px; margin-bottom:3px; }
+  .anim-mini .param-label b{ color:var(--text-1); font-weight:400; }
+  .anim-mini input[type="range"]{ height:12px; }
+
   .text-input{ width:100%; font-family:var(--sans); font-size:12px; background:var(--bg-3);
     border:1px solid var(--border); border-radius:5px; color:var(--text-0); padding:7px 8px; resize:vertical;
     min-height:44px; }

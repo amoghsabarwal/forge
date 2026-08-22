@@ -40,7 +40,22 @@ Working prototype, built iteratively. A few things worth knowing before you rely
 
 ## Effect stack
 
-Effects are an ordered stack of instances rather than a fixed set of toggles: add the same effect twice with different settings, reorder it, duplicate it, or disable one without losing its values. Eleven effect types ship today — Bloom, Halftone, Dither, Grain, Chromatic, Pixelate, Vignette, Scanlines, Outline, Color grade, and Ripple.
+Effects are an ordered stack of instances rather than a fixed set of toggles: add the same effect twice with different settings, reorder it, duplicate it, or disable one without losing its values.
+
+Fifteen effect types ship today:
+
+- **Texture** — Halftone, Dither, Grain, ASCII, Pixelate
+- **Light & color** — Bloom, Color grade, Vignette, Chromatic
+- **Line & structure** — Outline, Contour, Animated grid
+- **Distortion** — Ripple, Blobs, Scanlines
+
+ASCII builds its glyph atlas on a canvas at runtime from a sparse→dense character ramp, so there's no image asset to load and the ramp stays editable in code.
+
+### Animating a parameter
+
+Every parameter on every effect has an animate toggle (the ∿ button beside its value). Turn it on and that parameter is driven by an oscillator over the loop — which is what turns "dither" into "animated dither" without needing a separate effect for it.
+
+Each oscillator has a waveform (sine, triangle, saw, pulse, or smooth noise), an amount, a speed, and a phase offset. Phase is derived from loop position, so an animated parameter returns to where it started at the loop point and the exported video still cuts together seamlessly. Set different phase offsets on two copies of the same effect to get them moving against each other.
 
 Two things keep it fast:
 
