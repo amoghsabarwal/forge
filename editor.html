@@ -4,120 +4,91 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Forge — Editor</title>
-<meta name="description" content="Forge — a browser-based procedural composition and particle tool for turning a body of work into an animated, exportable reel.">
+<meta name="description" content="Forge — a browser-based composition and motion-design editor. Build layered compositions, stack effects per layer, animate with keyframes, export video.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="editor.css">
 </head>
 <body>
-<div id="shell">
-  <div class="shell-bar">
-    <a class="shell-mark" href="index.html" title="Back to home">
+
+<div id="app">
+
+  <!-- ── top: project / tools / preview / export ── -->
+  <header class="toolbar">
+    <a class="mark" href="index.html" title="Back to home">
       <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="2" transform="rotate(45 7 7)" style="fill:var(--accent)"/></svg>
       FORGE
     </a>
-    <div class="mode-switch" role="tablist">
-      <button class="mode-btn active" data-mode="shaders" role="tab" aria-selected="true">Shaders</button>
-      <button class="mode-btn" data-mode="particles" role="tab" aria-selected="false">Particles</button>
+
+    <div class="tool-group">
+      <button class="btn btn-sm" id="addImageBtn" title="Add an image layer">+ Image</button>
+      <button class="btn btn-sm" id="addTextBtn" title="Add a text layer">+ Text</button>
+      <button class="btn btn-sm" id="addSolidBtn" title="Add a solid background layer">+ Solid</button>
+      <input type="file" id="imageInput" accept="image/*" multiple hidden>
     </div>
-    <span class="shell-hint">a wall, globe or tunnel of images — or one turned to particles</span>
-  </div>
 
-  <div class="mode-container" id="modeShaders">
-<div class="mode-inner">
+    <div class="tool-group zoom-group">
+      <button class="btn btn-icon btn-sm" id="zoomOutBtn" title="Zoom out">−</button>
+      <span class="readout" id="zoomLabel">100%</span>
+      <button class="btn btn-icon btn-sm" id="zoomInBtn" title="Zoom in">+</button>
+      <button class="btn btn-sm" id="fitBtn" title="Fit to screen (F)">Fit</button>
+    </div>
 
-  <header class="topbar">
-    <div class="transport">
-      <div class="loop-meter">
-        <svg viewBox="0 0 32 32" width="32" height="32">
-          <circle class="ring-bg" cx="16" cy="16" r="13"></circle>
-          <circle class="ring-fg" id="ringFg" cx="16" cy="16" r="13"></circle>
-        </svg>
-        <span class="loop-time" id="loopTime">0.0s / 8.0s</span>
-      </div>
-      <button class="btn btn-icon" id="playBtn" title="Play / pause">▶</button>
-      <button class="btn btn-primary" id="exportBtn" disabled>Export video</button>
+    <div class="tool-group right">
+      <span class="readout" id="perfReadout" title="Estimated GPU cost · measured frame time">0 · 0ms</span>
+      <button class="btn btn-primary" id="exportBtn">Export</button>
     </div>
   </header>
 
-  <div class="workspace">
+  <div class="body">
 
-    <aside class="sidebar sidebar-left">
-      <div class="panel-title">
-        <span>MEDIA <span id="mediaCount">· 0</span></span>
-        <span class="panel-title-actions">
-          <button class="panel-icon-btn" id="shuffleBtn" title="Shuffle image order">Shuffle</button>
-        </span>
-      </div>
-      <div class="media-drop" id="mediaDrop">
-        <input type="file" id="mediaInput" accept="image/*" multiple hidden>
-        <p>+ Add images</p>
-      </div>
-      <div id="mediaList"></div>
+    <!-- ── left: scene / layers ── -->
+    <aside class="panel panel-left">
+      <div class="panel-title">SCENE</div>
+      <div id="layerList" class="layer-list"></div>
+      <p class="hint panel-foot">Drag to reorder · double-click to rename · top of list renders in front</p>
     </aside>
 
-    <section class="viewport" id="viewport">
-      <canvas id="outputCanvas" class="hidden"></canvas>
-      <div class="dropzone" id="dropzone">
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M12 16V4M12 4L7 9M12 4l5 5" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <p>Drop images to start a composition</p>
-        <span>wall, globe or tunnel — animated</span>
+    <!-- ── centre: canvas ── -->
+    <main class="stage-area" id="stageWrap">
+      <div class="stage-holder">
+        <canvas id="stage"></canvas>
+        <div id="overlay" class="stage-overlay"></div>
       </div>
-    </section>
+      <p class="drop-hint">Drop images anywhere to add them as layers</p>
+    </main>
 
-    <aside class="sidebar sidebar-right" id="inspector"></aside>
+    <!-- ── right: contextual inspector ── -->
+    <aside class="panel panel-right">
+      <div class="panel-title">INSPECTOR</div>
+      <div id="inspector" class="inspector"></div>
+    </aside>
 
   </div>
-</div>
-<div class="toast" id="toast"></div>
-  </div>
 
-  <div class="mode-container" id="modeParticles" hidden>
-<div class="mode-inner">
-
-  <header class="topbar">
+  <!-- ── bottom: timeline ── -->
+  <section class="timeline">
     <div class="transport">
-      <span class="particle-count" id="particleCountP"></span>
-      <div class="loop-meter">
-        <svg viewBox="0 0 32 32" width="32" height="32">
-          <circle class="ring-bg" cx="16" cy="16" r="13"></circle>
-          <circle class="ring-fg" id="ringFgP" cx="16" cy="16" r="13"></circle>
-        </svg>
-        <span class="loop-time" id="loopTimeP">0.0s / 6.0s</span>
-      </div>
-      <button class="btn btn-icon" id="playBtnP" title="Play / pause">▶</button>
-      <button class="btn btn-primary" id="exportBtnP" disabled>Export video</button>
+      <button class="btn btn-icon btn-sm" id="toStartBtn" title="Go to start">⏮</button>
+      <button class="btn btn-icon btn-sm" id="playBtn" title="Play / pause (Space)">▶</button>
+      <button class="btn btn-icon btn-sm" id="toEndBtn" title="Go to end">⏭</button>
+      <span class="readout" id="timeLabel">0.00 / 6.00s</span>
     </div>
-  </header>
-
-  <div class="workspace">
-    <aside class="sidebar sidebar-ghost" aria-hidden="true"></aside>
-    <section class="viewport" id="viewportP">
-      <canvas id="outputCanvasP" class="hidden"></canvas>
-      <button class="btn btn-change" id="changeBtnP" hidden>Change image</button>
-      <div class="dropzone" id="dropzoneP">
-        <input type="file" id="fileInputP" accept="image/*" hidden>
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M12 16V4M12 4L7 9M12 4l5 5" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <p>Drop a portrait or subject to scatter</p>
-        <span>works best with a clear subject against a darker background</span>
+    <div class="timeline-body" id="timelineBody">
+      <div class="ruler-row">
+        <div class="ruler-spacer"></div>
+        <div class="ruler" id="timelineRuler"></div>
       </div>
-    </section>
-    <aside class="inspector" id="inspectorP"></aside>
-  </div>
-</div>
-<div class="toast" id="toastP"></div>
-  </div>
+      <div id="timelineTracks" class="tracks"></div>
+      <div class="playhead" id="playhead"></div>
+    </div>
+  </section>
+
+  <div class="toast" id="toast"></div>
 </div>
 
-<script src="shell.js"></script>
-<script src="composer.js"></script>
-<script src="particles.js"></script>
+<script src="fx.js"></script>
+<script src="comp.js"></script>
+<script src="ui.js"></script>
 </body>
 </html>

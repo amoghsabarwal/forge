@@ -1,3 +1,32 @@
+/* Base tokens and button styles. These used to live in the old editor's styles.css;
+   the landing page now carries its own copy so it has no dependency on the editor. */
+:root{
+  --bg-0:#0a0908; --bg-1:#131110; --bg-2:#1c1917; --bg-3:#252220;
+  --border:#2c2825; --text-0:#f2efea; --text-1:#b8b1a9; --text-2:#726b64;
+  --accent:#ff5a1f; --accent-dim:#5c2410;
+  --mono:'JetBrains Mono', ui-monospace, monospace; --sans:'Inter', system-ui, sans-serif;
+}
+*{ box-sizing:border-box; }
+html,body{ margin:0; }
+body{ background:var(--bg-0); color:var(--text-0); font-family:var(--sans); }
+
+.btn{ font-family:var(--sans); font-size:12.5px; font-weight:600; border:1px solid var(--border);
+  background:var(--bg-2); color:var(--text-0); padding:8px 14px; border-radius:6px; cursor:pointer;
+  text-decoration:none; display:inline-flex; align-items:center;
+  transition:border-color .15s, background .15s, color .15s, transform .1s; }
+.btn:hover{ border-color:#3a3531; background:var(--bg-3); }
+.btn:active{ transform:scale(0.97); }
+.btn-primary{ background:var(--accent); border-color:var(--accent); color:#1a0800; }
+.btn-primary:hover{ background:#ff7038; border-color:#ff7038; }
+.btn-ghost{ background:transparent; }
+.btn-sm{ padding:6px 10px; font-size:11.5px; }
+.brand-tag{ font-family:var(--mono); font-size:10px; color:var(--accent);
+  border:1px solid var(--accent-dim); background:rgba(255,90,31,0.08);
+  padding:1px 6px; border-radius:3px; letter-spacing:0.08em; }
+.shell-mark{ display:flex; align-items:center; gap:8px; font-family:var(--mono); font-weight:700;
+  font-size:14px; letter-spacing:0.16em; color:var(--text-0); text-decoration:none; }
+.shell-mark svg{ display:block; flex-shrink:0; }
+
 /* landing.css — extends the token system in styles.css, scoped to #landing */
 
 .landing-body{ overflow:auto; height:auto; min-height:100%; }
