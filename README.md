@@ -1,40 +1,26 @@
 # Forge
 
-> **Design Interactive Motion for the Web.**
->
-> Create with shaders, media, 3D, and interaction in a visual canvas editor. Ship production-ready components to the web.
+**A browser-based composition and motion-design editor**, built by [Studio Deadzolt](https://deadzolt.studio).
 
-Forge is a browser-based creative engine for designers and art directors. It combines a visual composition canvas with procedural effects, media, 3D scenes, animation and web interaction.
+Forge turns your own images into a layered, animated composition — think Photoshop's layers crossed with After Effects' effect stacks and keyframes, but lightweight and running entirely in a browser tab. Nothing you upload leaves your machine.
 
-A browser-based composition and motion-design editor. Build a layered composition from your own images, stack effects on individual layers, animate anything with keyframes, and export a looping video — no build step, no install, nothing leaves the browser.
+**[Try it live →](https://forge.deadzolt.studio)**
 
-## Current editor direction
+## What it actually does
 
-The editor is a single workspace rather than a collection of isolated modes:
+You bring in images, text, and solid backgrounds as independent layers. Each layer gets its own position, scale, rotation, opacity, blend mode, and its own stack of visual effects — bloom, dither, ASCII, chromatic aberration, animated grids, and eleven others. Nothing is shared between layers unless you explicitly add it to the separate, composition-wide effect stack.
 
-- **Layers** — every uploaded asset is independent and editable.
-- **Shaders & effects** — stack procedural treatments non-destructively.
-- **3D** — Wall, Globe and Tunnel compositions with art-directed camera motion.
-- **Media** — images, logos, type and other visual assets.
-- **Animation** — loop timing, parameter animation and scripted camera beats.
-- **Interaction** — the long-term output is interactive web motion, not just a video render.
-- **Export / Ship** — production-ready web components are the destination.
+Then you animate it. Any property — a layer's position, an effect's intensity, anything with a slider — can be keyframed on a timeline, driven by a looping oscillator, or both at once. Scrub the timeline, hit play, and when it looks right, export it as a video.
 
-A newly added asset should enter the scene clean. Existing effects must never implicitly affect it. Effects belong to the selected layer unless explicitly added as composition-level effects.
+That's the whole product: **compose → animate → export**, done visually, in the browser.
 
-## Running it
+## Why it exists
 
-- Open `index.html` directly in a browser, or
-- Serve the folder locally (e.g. `npx serve .`) and visit it, or
-- Turn on GitHub Pages for this repo (Settings → Pages → deploy from `main`).
+Studio Deadzolt needed a fast way to turn still work — logos, photography, brand assets — into motion for reels and case studies, without opening a desktop app or hiring it out. Forge is that tool, built for our own use and shared because it's useful beyond us.
 
-No build tooling is required for the current prototype; the current prototype runs client-side and requires a browser with WebGL (Chrome is the best-tested).
+## The rule everything else follows
 
-## The model
-
-A composition is an ordered list of **independent layers**. Each layer owns its content, its transform, and its own effect stack.
-
-The rule that governs everything: **nothing happens implicitly**. Adding a layer never modifies another layer. An image you drop in after building up a stack of effects arrives completely clean. Effects apply to the layer you put them on — the only way to affect the whole composite is to add a **composition effect**, which is a separate, explicitly labelled stack.
+**Nothing happens implicitly.** Add a layer and it arrives clean — it never inherits effects from whatever you were just working on. Add an effect and it only touches the layer you added it to, unless you explicitly add it to the composition stack instead. You should always be able to answer: *what am I editing, and what does this affect?*
 
 ```
 COMPOSITION
@@ -44,59 +30,71 @@ COMPOSITION
     ├ Contour
     └ Bloom
   Background
-+ Composition effects  ← applied last, to the finished composite
++ Composition effects   ← applied last, to the finished composite
 ```
 
-Layer order is render order; the top of the scene panel draws in front.
+## Features
 
-## Structure
+- **Layers** — image, text, and solid layers with independent transforms and blend modes. Drag to reorder, rename, hide, lock, solo, duplicate.
+- **Direct manipulation** — select a layer and drag, scale, or rotate it right on the canvas.
+- **15 effects** across Light, Texture, Structure, and Distortion — Bloom, Color grade, Vignette, Chromatic, Halftone, Dither, Grain, ASCII, Pixelate, Outline, Contour, Animated grid, Scanlines, Ripple, Blobs. Every stack is ordered, non-destructive, and reorderable.
+- **Keyframe animation** — set a value at the playhead with one click; motion eases between keys instead of moving linearly.
+- **Oscillators** — drive any parameter with a continuous waveform (sine, triangle, saw, pulse, noise) instead of, or on top of, keyframes.
+- **Video export** — rendered frame-by-frame for even timing, up to 3× resolution, as a looping WebM.
+- **Runs entirely client-side** — no uploads, no accounts, no server.
 
-```text
+## Performance controls
+
+- **Per-effect downsample** (Full / 75% / 50% / 25%) — halving resolution is 75% fewer pixels to shade, and soft effects like bloom usually look identical at half size.
+- **Preview frame-rate cap** (24 / 30 / 60 / Max) — export always renders at full rate regardless of this setting.
+- A live readout shows an estimated GPU cost score and measured frame time as you build.
+
+## Keyboard shortcuts
+
+Work anywhere except while typing in a field.
+
+| Key | Action |
+|---|---|
+| `Space` | Play / pause |
+| `Delete` / `Backspace` | Remove the selected layer (undoable) |
+| `Cmd/Ctrl + D` | Duplicate the selected layer |
+| `H` | Hide / show the selected layer |
+| `L` | Lock / unlock the selected layer |
+| `F` | Fit the canvas to the screen |
+| Arrow keys | Nudge the selected layer (hold Shift for 10px) |
+
+## Running it locally
+
+No build step, no dependencies.
+
+- Open `index.html` directly in a browser, or
+- Serve the folder locally (`npx serve .`) and visit it, or
+- Fork this repo and turn on GitHub Pages (Settings → Pages → deploy from `main`).
+
+Requires a browser with WebGL. Best tested in Chrome.
+
+## Project structure
+
+```
 index.html      landing page
-editor.html     visual editor shell
-styles.css      shared editor design system
-landing.css     landing page styles
-landing.js      landing page interaction
-shell.js        editor bootstrap
-composer.js     3D composition, camera, effects and export
-fx.js           effect engine: library, instances, oscillators, WebGL chain runner
-comp.js         composition model: layers, keyframes, render pipeline, export
-ui.js           panels, canvas interaction, timeline
-layer-engine.js layer / media list and runtime layer manager
+editor.html     editor shell — toolbar, scene panel, canvas, inspector, timeline
+editor.css      editor styles
+fx.js           effect engine — the effect library, instances, oscillators, WebGL chain runner
+comp.js         composition model — layers, keyframes, render pipeline, export
+ui.js           panel logic, canvas interaction, timeline
 ```
 
+`fx.js` has no concept of a layer; `comp.js` runs an effect chain over one layer's pixels, then again over the finished composite. Every effect preserves source alpha, which is what lets them run per layer without turning a transparent logo into a black rectangle.
 
+## Status
 
-The current composition engine supports Wall, Globe and Tunnel layouts, scripted camera flythroughs, image focus points, logo overlays, title text, backgrounds and a procedural effect stack.
+Working prototype, actively evolving.
 
-Working prototype. Known limits:
+- **Settings persist; images don't.** Layers, transforms, effects, and keyframes are saved to `localStorage` and restored on your next visit. Image pixels aren't — re-add the file and everything else snaps back into place.
+- **No object tracking yet.** Attaching an effect to a tracked subject in the frame is a real computer-vision feature, not a toggle, and it hasn't been built.
+- **No video layers yet.** Images, text, and solids only, for now.
+- **The effects pass is real-time, not offline-rendered.** A heavy stack at 3× export resolution may drop frames rather than corrupt the file. Per-effect downsampling is the fix.
 
-- **Style settings persist; images don't.** Layers, transforms, effects, and keyframes are saved to `localStorage` and restored on your next visit. Image pixels aren't (photo-sized blobs don't belong in `localStorage`), so image layers come back needing their file re-added.
-- **No blob tracking yet.** Attaching effects to a tracked object is a real computer-vision problem and hasn't been built — it's the next major piece, not a setting that's switched off.
-- **No video layers yet.** Images, text, and solids only.
-- **The effects pass is real-time, not offline-rendered.** A heavy stack at 3× export will drop frames rather than corrupt the file — it looks choppier, not broken. Per-effect downsampling is the fix.
+## Credits
 
-The next architectural priority is converting the existing composition-level effect stack into a true layer-aware system so each asset can have its own transform and effect stack.
-
-## Effects
-
-The prototype currently includes procedural texture, light/color, structure and distortion effects, with per-parameter animation controls and performance controls such as effect downsampling and frame-rate limits.
-
-## Product direction
-
-Forge is not intended to be another flat image editor or video exporter. The product is a **visual development environment for interactive web motion**:
-
-```text
-Media + Shaders + 3D + Interaction
-                ↓
-          Visual Canvas
-                ↓
-        Animation / Logic
-                ↓
-      Production Web Component
-```
-
-
-## License
-
-Not yet decided.
+Built by [Studio Deadzolt](https://deadzolt.studio).
