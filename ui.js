@@ -586,6 +586,25 @@
       sg.appendChild(cRow);
     }
 
+    if(layer.kind === 'video' && layer.video){
+      const vg = group('VIDEO');
+      const dur = layer.video.duration || 0;
+      vg.appendChild(el('p','hint', 'Source clip is ' + dur.toFixed(1) + 's.'
+        + (dur < C.state.duration ? ' Shorter than the composition — it will loop.' : '')));
+      slider(vg, {label:'start offset', min:0, max:Math.max(0.1,dur), step:0.1, unit:'s',
+        get:()=>layer.video.offset, set:v=>{layer.video.offset=v;}});
+      const loopRow = el('div','param-row');
+      const loopLab = el('div','param-label'); loopLab.appendChild(el('b',null,'loop'));
+      loopRow.appendChild(loopLab);
+      const sw = el('label','switch');
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = layer.video.loop;
+      cb.addEventListener('change', () => { layer.video.loop = cb.checked; });
+      sw.appendChild(cb); sw.appendChild(el('span','track')); sw.appendChild(el('span','thumb'));
+      loopRow.appendChild(sw);
+      vg.appendChild(loopRow);
+      vg.appendChild(el('p','hint','Exported video currently has no audio track.'));
+    }
+
     const fxG = group('EFFECTS');
     fxG.appendChild(el('p','hint','Only affect ' + layer.name + '.'));
     effectStackUI(fxG, layer.fx, layer);
@@ -680,17 +699,21 @@
 
   /* ================= toolbar ================= */
 
-  const imageInput = $('imageInput');
+  const imageInput = $('imageInput'), videoInput = $('videoInput');
   $('addImageBtn').addEventListener('click', () => imageInput.click());
   imageInput.addEventListener('change', e => {
-    [...e.target.files].forEach(file => loadImageFile(file));
+    [...e.target.files].forEach(file => loadAssetFile(file));
     imageInput.value = '';
+  });
+  $('addVideoBtn').addEventListener('click', () => videoInput.click());
+  videoInput.addEventListener('change', e => {
+    [...e.target.files].forEach(file => loadAssetFile(file));
+    videoInput.value = '';
   });
   $('addTextBtn').addEventListener('click', () => C.addTextLayer());
   $('addSolidBtn').addEventListener('click', () => C.addSolidLayer());
 
   function loadImageFile(file){
-    if(!file.type.startsWith('image/')){ toast('That file is not an image.'); return; }
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -701,12 +724,29 @@
     img.src = url;
   }
 
+  function loadVideoFile(file){
+    const url = URL.createObjectURL(file);
+    const el = document.createElement('video');
+    el.muted = true; el.playsInline = true; el.preload = 'auto'; el.loop = false; // Forge drives looping itself
+    el.addEventListener('loadedmetadata', () => {
+      C.addVideoLayer(el, file.name.replace(/\.[^.]+$/,''));
+    }, {once:true});
+    el.addEventListener('error', () => toast('Could not load that video.'), {once:true});
+    el.src = url;
+  }
+
+  function loadAssetFile(file){
+    if(file.type.startsWith('image/')) loadImageFile(file);
+    else if(file.type.startsWith('video/')) loadVideoFile(file);
+    else toast('That file is not an image or video.');
+  }
+
   stageWrap.addEventListener('dragover', e => { e.preventDefault(); stageWrap.classList.add('drag'); });
   stageWrap.addEventListener('dragleave', () => stageWrap.classList.remove('drag'));
   stageWrap.addEventListener('drop', e => {
     e.preventDefault();
     stageWrap.classList.remove('drag');
-    [...(e.dataTransfer.files||[])].forEach(loadImageFile);
+    [...(e.dataTransfer.files||[])].forEach(loadAssetFile);
   });
 
   $('playBtn').addEventListener('click', () => C.togglePlay());

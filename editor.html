@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Forge — Editor</title>
 <meta name="description" content="Forge — a browser-based composition and motion-design editor. Build layered compositions, stack effects per layer, animate with keyframes, export video.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://api.fontshare.com">
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="editor.css">
 </head>
 <body>
@@ -15,16 +15,15 @@
 
   <!-- ── top: project / tools / preview / export ── -->
   <header class="toolbar">
-    <a class="mark" href="index.html" title="Back to home">
-      <svg width="14" height="14" viewBox="0 0 14 14"><rect x="1" y="1" width="12" height="12" rx="2" transform="rotate(45 7 7)" style="fill:var(--accent)"/></svg>
-      FORGE
-    </a>
+    <a class="mark" href="index.html" title="Back to home">forge</a>
 
     <div class="tool-group">
       <button class="btn btn-sm" id="addImageBtn" title="Add an image layer">+ Image</button>
+      <button class="btn btn-sm" id="addVideoBtn" title="Add a video layer">+ Video</button>
       <button class="btn btn-sm" id="addTextBtn" title="Add a text layer">+ Text</button>
       <button class="btn btn-sm" id="addSolidBtn" title="Add a solid background layer">+ Solid</button>
       <input type="file" id="imageInput" accept="image/*" multiple hidden>
+      <input type="file" id="videoInput" accept="video/*" multiple hidden>
     </div>
 
     <div class="tool-group zoom-group">
@@ -55,7 +54,7 @@
         <canvas id="stage"></canvas>
         <div id="overlay" class="stage-overlay"></div>
       </div>
-      <p class="drop-hint">Drop images anywhere to add them as layers</p>
+      <p class="drop-hint">Drop images or videos anywhere to add them as layers</p>
     </main>
 
     <!-- ── right: contextual inspector ── -->

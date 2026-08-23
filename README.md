@@ -35,7 +35,7 @@ COMPOSITION
 
 ## Features
 
-- **Layers** — image, text, and solid layers with independent transforms and blend modes. Drag to reorder, rename, hide, lock, solo, duplicate.
+- **Layers** — image, video, text, and solid layers with independent transforms and blend modes. Drag to reorder, rename, hide, lock, solo, duplicate.
 - **Direct manipulation** — select a layer and drag, scale, or rotate it right on the canvas.
 - **15 effects** across Light, Texture, Structure, and Distortion — Bloom, Color grade, Vignette, Chromatic, Halftone, Dither, Grain, ASCII, Pixelate, Outline, Contour, Animated grid, Scanlines, Ripple, Blobs. Every stack is ordered, non-destructive, and reorderable.
 - **Keyframe animation** — set a value at the playhead with one click; motion eases between keys instead of moving linearly.
@@ -43,11 +43,27 @@ COMPOSITION
 - **Video export** — rendered frame-by-frame for even timing, up to 3× resolution, as a looping WebM.
 - **Runs entirely client-side** — no uploads, no accounts, no server.
 
-## Performance controls
+## Video layers
+
+Drop in a video the same way you'd drop in an image — it becomes its own layer with the same transform, blend mode, and effect stack as everything else. Two video-specific settings live in its inspector: a **start offset** into the source clip, and whether it **loops** to fill the composition if the clip is shorter than the timeline.
+
+Playback is synced to the composition's own clock, not the video's — scrub the timeline and the video seeks with it; press play and it starts from wherever the playhead is. A drift check nudges it back in sync if the browser's playback clock wanders.
+
+Export handles video differently than the live preview does, on purpose. Live playback shows whatever frame the video happens to have decoded — fast, and accurate enough to look at. Export instead seeks every video layer to its exact frame and *waits* for the browser to confirm it landed there before capturing — slower, but frame-accurate, so the exported file doesn't end up soft or a beat off from everything else in the composition.
+
+**Exported video currently has no audio track.** The recorder captures the canvas, not the source clip's audio.
+
+## Performance
+
+The editor only does work when something is actually changing. Most layers in a real composition — a background, a logo, a title that isn't moving — never change from one frame to the next, so their rendered result is cached and reused instead of being redrawn and pushed back through the effect chain 60 times a second. A layer only forces a fresh render when it genuinely has something time-based going on: a keyframe, an oscillating effect parameter, or (always) a video. Edit anything about a static layer and its cache invalidates immediately, so this never costs you correctness — only the redundant work is skipped.
+
+The same idea applies to the whole composition: if nothing anywhere is animated and nothing's changed since the last frame, the editor does nothing that frame. Add a keyframe, an oscillator, or a video layer and it goes back to rendering continuously.
+
+On top of that:
 
 - **Per-effect downsample** (Full / 75% / 50% / 25%) — halving resolution is 75% fewer pixels to shade, and soft effects like bloom usually look identical at half size.
 - **Preview frame-rate cap** (24 / 30 / 60 / Max) — export always renders at full rate regardless of this setting.
-- A live readout shows an estimated GPU cost score and measured frame time as you build.
+- A live readout shows an estimated GPU cost score and measured frame time — the frame time reflects only frames that actually rendered, so it stays an honest number rather than getting diluted by skipped ones.
 
 ## Keyboard shortcuts
 
@@ -92,7 +108,6 @@ Working prototype, actively evolving.
 
 - **Settings persist; images don't.** Layers, transforms, effects, and keyframes are saved to `localStorage` and restored on your next visit. Image pixels aren't — re-add the file and everything else snaps back into place.
 - **No object tracking yet.** Attaching an effect to a tracked subject in the frame is a real computer-vision feature, not a toggle, and it hasn't been built.
-- **No video layers yet.** Images, text, and solids only, for now.
 - **The effects pass is real-time, not offline-rendered.** A heavy stack at 3× export resolution may drop frames rather than corrupt the file. Per-effect downsampling is the fix.
 
 ## Credits

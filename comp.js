@@ -50,7 +50,7 @@ window.ForgeComp = (function(){
   function makeLayer(kind, name){
     return {
       id: nextLayerId++,
-      kind,                       // 'image' | 'text' | 'solid'
+      kind,                       // 'image' | 'text' | 'solid' | 'video'
       name: name || kind,
       visible: true,
       locked: false,
@@ -61,7 +61,9 @@ window.ForgeComp = (function(){
       keys: {},                   // propPath -> [{t, v}]
       img: null,                  // image layers
       text: {content:'Forge', size:96, color:'#f2efea', weight:'700', font:'Inter'},
-      solid: {color:'#101010'}
+      solid: {color:'#101010'},
+      video: null,                // {el, duration, offset, loop} — video layers, see addVideoLayer
+      _cache: null                // {sig, canvas, w, h} — internal, used by the static-layer render cache
     };
   }
 
@@ -87,6 +89,14 @@ window.ForgeComp = (function(){
     emit('layers');
     return layer;
   }
+  function addVideoLayer(videoEl, name){
+    const layer = makeLayer('video', name || 'Video');
+    layer.video = {el: videoEl, duration: videoEl.duration || 0, offset: 0, loop: true};
+    state.layers.push(layer);
+    select('layer', layer.id);
+    emit('layers');
+    return layer;
+  }
   function layerById(id){ return state.layers.find(l => l.id === id); }
   function layerIndex(id){ return state.layers.findIndex(l => l.id === id); }
 
@@ -105,10 +115,21 @@ window.ForgeComp = (function(){
   function duplicateLayer(id){
     const src = layerById(id);
     if(!src) return;
-    const copy = JSON.parse(JSON.stringify({...src, img:null}));
+    // img, video, and _cache all hold live DOM objects (an Image/HTMLVideoElement/canvas) —
+    // JSON.stringify can't serialize those, so they're stripped here and reattached after.
+    const copy = JSON.parse(JSON.stringify({...src, img:null, video:null, _cache:null}));
     copy.id = nextLayerId++;
     copy.name = src.name + ' copy';
     copy.img = src.img;             // share the decoded bitmap, don't re-decode
+    if(src.video && src.video.el){
+      // a fresh <video> pointed at the same source, so the two layers can play and seek
+      // independently instead of fighting over one element's currentTime
+      const el = document.createElement('video');
+      el.muted = true; el.playsInline = true; el.preload = 'auto';
+      el.src = src.video.el.currentSrc || src.video.el.src;
+      copy.video = {el, duration: src.video.duration, offset: src.video.offset, loop: src.video.loop};
+    }
+    copy._cache = null;
     copy.fx = src.fx.map(f => Object.assign(JSON.parse(JSON.stringify(f)), {uid: ForgeFX.makeInstance(f.typeId).uid}));
     state.layers.splice(layerIndex(id)+1, 0, copy);
     select('layer', copy.id);
@@ -241,6 +262,11 @@ window.ForgeComp = (function(){
       const iw = layer.img.naturalWidth, ih = layer.img.naturalHeight;
       const fit = Math.min(W/iw, H/ih);
       cctx.drawImage(layer.img, -iw*fit/2, -ih*fit/2, iw*fit, ih*fit);
+    } else if(layer.kind === 'video' && layer.video && layer.video.el && layer.video.el.videoWidth){
+      const v = layer.video.el;
+      const iw = v.videoWidth, ih = v.videoHeight;
+      const fit = Math.min(W/iw, H/ih);
+      cctx.drawImage(v, -iw*fit/2, -ih*fit/2, iw*fit, ih*fit);
     } else if(layer.kind === 'text'){
       const tx = layer.text;
       cctx.font = tx.weight + ' ' + tx.size + 'px ' + tx.font + ', Inter, sans-serif';
@@ -262,6 +288,10 @@ window.ForgeComp = (function(){
       const iw = layer.img.naturalWidth, ih = layer.img.naturalHeight;
       const fit = Math.min(W/iw, H/ih);
       cw = iw*fit; ch = ih*fit;
+    } else if(layer.kind === 'video' && layer.video && layer.video.el && layer.video.el.videoWidth){
+      const v = layer.video.el;
+      const fit = Math.min(W/v.videoWidth, H/v.videoHeight);
+      cw = v.videoWidth*fit; ch = v.videoHeight*fit;
     } else if(layer.kind === 'text'){
       cctx.font = layer.text.weight + ' ' + layer.text.size + 'px ' + layer.text.font + ', Inter, sans-serif';
       cw = cctx.measureText(layer.text.content).width;
@@ -271,25 +301,101 @@ window.ForgeComp = (function(){
     return {x: W/2 + tr.x - cw/2, y: H/2 + tr.y - ch/2, w:cw, h:ch, rotation:tr.rotation};
   }
 
+  function fxStackIsAnimated(stack){
+    return stack.some(inst => {
+      if(!inst.enabled) return false;
+      const type = ForgeFX.typeById(inst.typeId);
+      if(type && type.animated) return true; // e.g. grain's film noise, scanline scroll
+      return Object.values(inst.anim || {}).some(a => a.on && a.amount > 0);
+    });
+  }
+  function layerIsAnimated(layer){
+    if(layer.kind === 'video') return true; // video content itself changes every frame
+    if(Object.keys(layer.keys).length) return true;
+    return fxStackIsAnimated(layer.fx);
+  }
+
+  // Cheap fingerprint of everything that affects a static layer's pixels. Recomputing this
+  // every frame (a small JSON.stringify) is orders of magnitude cheaper than the content
+  // draw + GPU effect chain it lets us skip.
+  function layerSignature(layer, t){
+    return JSON.stringify({
+      tr: transformAt(layer, t), blend: layer.blend,
+      fx: layer.fx.map(i => ({t:i.typeId, e:i.enabled, d:i.downsample, p:i.params})),
+      content: layer.kind === 'text' ? layer.text
+             : layer.kind === 'solid' ? layer.solid
+             : layer.kind === 'image' ? (layer.img ? layer.img.src : null)
+             : layer.kind === 'video' ? 'video' // always treated as animated — see layerIsAnimated
+             : null
+    });
+  }
+
+  let lastFrameSignature = '';
+
+  // Draws a layer's content and runs its effect chain, leaving the final per-layer result
+  // sitting in `scratch` either way — so callers never need to know whether fx ran.
+  function renderLayerToScratch(layer, t, theta, pixelScale){
+    const tr = drawLayerContent(layer, t);
+    if(ForgeFX.hasActive(layer.fx)){
+      const out = ForgeFX.run(scratch, layer.fx, {
+        theta, pixelScale,
+        resolve: (inst, spec) => valueAt(layer, fxPath(inst, spec.key), inst.params[spec.key], t)
+      });
+      if(out){
+        cctx.clearRect(0,0,scratch.width,scratch.height);
+        cctx.drawImage(out, 0, 0);
+      }
+    }
+    return tr;
+  }
+
   function renderFrame(t, targetCtx, targetCanvas, resMult){
     const W = stage.width, H = stage.height;
     const theta = (t/Math.max(0.001, state.duration))*Math.PI*2;
     const pixelScale = (resMult || 1);
+    const isLivePreview = !targetCtx; // export always passes explicit targets
+
+    // Whole-composition fast path: preview only, nothing animated, nothing changed since
+    // the pixels already on screen — there's genuinely nothing to do this frame.
+    if(isLivePreview){
+      const anyAnimated = state.layers.some(l => layerRenders(l) && layerIsAnimated(l)) || fxStackIsAnimated(state.compFx);
+      if(!anyAnimated){
+        const layerSigs = state.layers.filter(layerRenders).map(l => l.id + ':' + layerSignature(l, t)).join('|');
+        const compSig = JSON.stringify(state.compFx.map(i => ({t:i.typeId, e:i.enabled, d:i.downsample, p:i.params})));
+        const sig = layerSigs + '::' + compSig + '::' + W + 'x' + H;
+        if(sig === lastFrameSignature) return false; // already showing this exact frame
+        lastFrameSignature = sig;
+      } else {
+        lastFrameSignature = '';
+      }
+    }
 
     sctx.clearRect(0,0,W,H);
 
     state.layers.forEach(layer => {
       if(!layerRenders(layer)) return;
-      const tr = drawLayerContent(layer, t);
+      const animated = layerIsAnimated(layer);
 
-      // this layer's own chain — keyframed base value first, oscillator on top
-      let source = scratch;
-      if(ForgeFX.hasActive(layer.fx)){
-        const out = ForgeFX.run(scratch, layer.fx, {
-          theta, pixelScale,
-          resolve: (inst, spec) => valueAt(layer, fxPath(inst, spec.key), inst.params[spec.key], t)
-        });
-        if(out) source = out;
+      let source, tr;
+      if(!animated && isLivePreview){
+        const sig = layerSignature(layer, t);
+        if(layer._cache && layer._cache.sig === sig && layer._cache.w === W && layer._cache.h === H){
+          source = layer._cache.canvas;
+          tr = transformAt(layer, t); // cheap — no keys on a static layer, just reads the plain value
+        } else {
+          tr = renderLayerToScratch(layer, t, theta, pixelScale);
+          const cache = layer._cache && layer._cache.w === W && layer._cache.h === H
+            ? layer._cache
+            : {canvas: document.createElement('canvas'), w:W, h:H};
+          cache.canvas.width = W; cache.canvas.height = H;
+          cache.canvas.getContext('2d').drawImage(scratch, 0, 0);
+          cache.sig = sig;
+          layer._cache = cache;
+          source = layer._cache.canvas;
+        }
+      } else {
+        tr = renderLayerToScratch(layer, t, theta, pixelScale);
+        source = scratch;
       }
 
       sctx.save();
@@ -311,9 +417,10 @@ window.ForgeComp = (function(){
 
     const ctx = targetCtx || vctx;
     const cv = targetCanvas || view;
-    if(!ctx || !cv) return;
+    if(!ctx || !cv) return false;
     ctx.clearRect(0,0,cv.width,cv.height);
     ctx.drawImage(finalSource, 0, 0, cv.width, cv.height);
+    return true;
   }
 
   /* ---------------- transport ---------------- */
@@ -323,16 +430,65 @@ window.ForgeComp = (function(){
 
   function currentTime(){ return time; }
   function isPlaying(){ return playing; }
+
+  // A video layer's own clock is independent of the composition's — this maps comp time
+  // to a position inside the video, honoring its offset and (by default) looping it to
+  // fill however long the composition runs.
+  function videoTimeFor(layer, t){
+    const v = layer.video;
+    if(!v || !v.duration) return 0;
+    const local = t + (v.offset || 0);
+    return v.loop ? local % v.duration : Math.min(local, v.duration - 0.01);
+  }
+  function syncVideosLive(){
+    state.layers.forEach(layer => {
+      if(layer.kind !== 'video' || !layer.video || !layer.video.el) return;
+      const v = layer.video, el = v.el;
+      if(playing && layerRenders(layer)){
+        const want = videoTimeFor(layer, time);
+        if(el.paused) { el.currentTime = want; el.play().catch(()=>{}); }
+        else if(Math.abs(el.currentTime - want) > 0.2) el.currentTime = want; // resync on drift
+      } else if(!el.paused){
+        el.pause();
+      }
+    });
+  }
+  // Export needs frame-accurate video: seek every video layer to its exact mapped time and
+  // wait for the browser to actually land on that frame before the canvas is captured.
+  function seekVideosTo(t){
+    const jobs = state.layers
+      .filter(l => l.kind === 'video' && l.video && l.video.el && l.video.duration)
+      .map(l => new Promise(resolve => {
+        const el = l.video.el, want = videoTimeFor(l, t);
+        if(Math.abs(el.currentTime - want) < 0.008){ resolve(); return; }
+        const done = () => { el.removeEventListener('seeked', done); resolve(); };
+        el.addEventListener('seeked', done);
+        el.currentTime = want;
+        setTimeout(done, 250); // safety net — some browsers skip 'seeked' for tiny deltas
+      }));
+    return jobs.length ? Promise.all(jobs) : Promise.resolve();
+  }
+
   function setTime(t){
     time = Math.max(0, Math.min(state.duration, t));
     if(playing){ playStart = performance.now(); playFrom = time; }
+    state.layers.forEach(layer => {
+      if(layer.kind === 'video' && layer.video && layer.video.el && !playing){
+        layer.video.el.currentTime = videoTimeFor(layer, time);
+      }
+    });
     emit('time');
   }
   function play(){
     playing = true; playStart = performance.now(); playFrom = time;
+    syncVideosLive();
     emit('transport');
   }
-  function pause(){ playing = false; emit('transport'); }
+  function pause(){
+    playing = false;
+    state.layers.forEach(l => { if(l.kind==='video' && l.video && l.video.el) l.video.el.pause(); });
+    emit('transport');
+  }
   function togglePlay(){ playing ? pause() : play(); }
 
   function tick(now){
@@ -342,6 +498,7 @@ window.ForgeComp = (function(){
     if(playing){
       const elapsed = (now - playStart)/1000 + playFrom;
       time = elapsed % state.duration;
+      syncVideosLive();
       emit('time-quiet');
     }
     if(!exporting && state.fpsCap > 0){
@@ -349,8 +506,8 @@ window.ForgeComp = (function(){
     }
     const t0 = performance.now();
     lastDraw = now;
-    renderFrame(time);
-    frameMs = frameMs*0.9 + (performance.now()-t0)*0.1;
+    const drew = renderFrame(time);
+    if(drew !== false) frameMs = frameMs*0.9 + (performance.now()-t0)*0.1;
   }
 
   function perf(){ return {frameMs, cost: ForgeFX.costOf([state.compFx].concat(state.layers.map(l => l.fx)))}; }
@@ -381,6 +538,7 @@ window.ForgeComp = (function(){
     const chunks = [];
     const wasPlaying = playing, resumeAt = time;
     exporting = true; playing = false;
+    state.layers.forEach(l => { if(l.kind==='video' && l.video && l.video.el) l.video.el.pause(); });
     onStatus && onStatus('start');
 
     recorder.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
@@ -399,16 +557,22 @@ window.ForgeComp = (function(){
     };
 
     // Render the loop frame by frame at a fixed step rather than trusting wall-clock, so
-    // the exported file has even timing even if a frame takes longer than its slot.
+    // the exported file has even timing even if a frame takes longer than its slot. When
+    // video layers are present, each frame first seeks them to their exact mapped time and
+    // waits for the browser to confirm it landed there — slower than the live preview, but
+    // it's what makes the exported video frame-accurate instead of a blurry approximation.
+    const hasVideo = state.layers.some(l => l.kind === 'video');
     const fps = 30, total = Math.max(1, Math.round(state.duration*fps));
     let frame = 0;
     recorder.start();
-    function step(){
+    async function step(){
       if(frame > total){
         if(recorder.state !== 'inactive') recorder.stop();
         return;
       }
-      renderFrame((frame/fps) % state.duration, octx, out, mult);
+      const t = (frame/fps) % state.duration;
+      if(hasVideo) await seekVideosTo(t);
+      renderFrame(t, octx, out, mult);
       onStatus && onStatus('progress', Math.round(frame/total*100));
       frame++;
       setTimeout(step, 1000/fps);
@@ -477,7 +641,7 @@ window.ForgeComp = (function(){
   return {
     state, BLEND_MODES, FRAME_PRESETS, TRANSFORM_PROPS,
     onChange, emit,
-    addImageLayer, addTextLayer, addSolidLayer,
+    addImageLayer, addTextLayer, addSolidLayer, addVideoLayer,
     layerById, layerIndex, removeLayer, restoreLayer, duplicateLayer, moveLayer, reorderLayer,
     select, selectedLayer, layerRenders,
     setKey, removeKey, clearKeys, keyList, hasKeys, valueAt, transformAt, fxPath,
