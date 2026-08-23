@@ -218,6 +218,207 @@ window.ForgeFX = (function(){
       gl_FragColor = vec4(clamp(src.rgb + line*uIntensity, 0.0, 1.0), max(src.a, line*uIntensity));
     }`;
 
+  /* ---- new effect set (original implementations) ----
+     Effects, not code, are what's shared with common shader references — these are written
+     from scratch to fit Forge's per-layer, alpha-preserving, oscillator-driven model. The
+     post-processing ones default to a gentle built-in motion so they look alive on drop. */
+
+  // Gaussian blur — separable would be faster, but a single-pass sampled kernel keeps the
+  // one-shader-per-effect model. uAngle lets the blur sweep direction animate.
+  const BLUR = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uRadius, uAngle;
+    void main(){
+      vec2 texel = (1.0/uResolution) * uRadius;
+      float c = cos(uAngle), s = sin(uAngle);
+      mat2 rot = mat2(c,-s,s,c);
+      vec4 sum = vec4(0.0); float wsum = 0.0;
+      for(int x=-4;x<=4;x++){
+        for(int y=-4;y<=4;y++){
+          vec2 o = rot * vec2(float(x),float(y));
+          float w = exp(-(float(x*x+y*y))/8.0);
+          sum += texture2D(uTex, vUv + o*texel) * w; wsum += w;
+        }
+      }
+      gl_FragColor = sum/wsum;
+    }`;
+
+  // Sobel edge detection in color — distinct from Outline (which keys on luminance/alpha and
+  // draws a mask). This keeps per-channel edges, so colored edges survive.
+  const EDGE = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uThickness, uIntensity, uMix;
+    vec3 samp(vec2 uv){ return texture2D(uTex, clamp(uv,0.0,1.0)).rgb; }
+    void main(){
+      vec2 t = (1.0/uResolution)*uThickness;
+      vec3 gx = samp(vUv+vec2(-t.x,-t.y))*-1.0 + samp(vUv+vec2(t.x,-t.y))
+              + samp(vUv+vec2(-t.x,0.0))*-2.0 + samp(vUv+vec2(t.x,0.0))*2.0
+              + samp(vUv+vec2(-t.x,t.y))*-1.0 + samp(vUv+vec2(t.x,t.y));
+      vec3 gy = samp(vUv+vec2(-t.x,-t.y))*-1.0 + samp(vUv+vec2(-t.x,t.y))
+              + samp(vUv+vec2(0.0,-t.y))*-2.0 + samp(vUv+vec2(0.0,t.y))*2.0
+              + samp(vUv+vec2(t.x,-t.y))*-1.0 + samp(vUv+vec2(t.x,t.y));
+      vec3 edge = sqrt(gx*gx + gy*gy) * uIntensity;
+      vec4 base = texture2D(uTex, vUv);
+      gl_FragColor = vec4(mix(base.rgb, edge, uMix), base.a);
+    }`;
+
+  // RGB shift — channels slide apart along an angle that rotates over the loop.
+  const RGBSHIFT = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uAmount, uAngle, uTheta;
+    void main(){
+      float a = uAngle + uTheta;
+      vec2 dir = vec2(cos(a), sin(a)) * uAmount * 0.01;
+      float r = texture2D(uTex, clamp(vUv+dir,0.0,1.0)).r;
+      vec4 g = texture2D(uTex, vUv);
+      float b = texture2D(uTex, clamp(vUv-dir,0.0,1.0)).b;
+      gl_FragColor = vec4(r, g.g, b, g.a);
+    }`;
+
+  // Bad TV — rolling scanline distortion + horizontal jitter + noise, all time-driven.
+  const BADTV = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uDistortion, uRoll, uNoise, uTheta;
+    float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+    void main(){
+      float roll = fract(vUv.y + uTheta*uRoll*0.05);
+      float jitter = (hash(vec2(floor(roll*80.0), floor(uTheta*8.0)))-0.5) * uDistortion * 0.05;
+      vec2 uv = vec2(vUv.x + jitter, vUv.y);
+      vec4 src = texture2D(uTex, clamp(uv,0.0,1.0));
+      float n = (hash(vUv*uResolution*0.5 + uTheta*13.0)-0.5) * uNoise;
+      gl_FragColor = vec4(clamp(src.rgb + n, 0.0, 1.0), src.a);
+    }`;
+
+  // Lens — barrel/pincushion distortion with a subtle animated breathing on the strength.
+  const LENS = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uStrength, uZoom;
+    void main(){
+      vec2 c = vUv - 0.5;
+      float r2 = dot(c,c);
+      vec2 uv = c * (1.0 + uStrength * r2) / uZoom + 0.5;
+      if(uv.x<0.0||uv.x>1.0||uv.y<0.0||uv.y>1.0){ gl_FragColor = vec4(0.0); return; }
+      gl_FragColor = texture2D(uTex, uv);
+    }`;
+
+  // Pixel sort — a lightweight approximation: within horizontal bands, pixels brighter than a
+  // threshold get pulled along the row, giving the smeared "sort" look. Band offset animates.
+  const PIXSORT = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uThreshold, uLength, uTheta;
+    void main(){
+      vec4 src = texture2D(uTex, vUv);
+      float lum = dot(src.rgb, vec3(0.299,0.587,0.114));
+      if(lum < uThreshold){ gl_FragColor = src; return; }
+      float shift = (uLength/uResolution.x) * (0.5 + 0.5*sin(uTheta + vUv.y*20.0));
+      vec4 pulled = texture2D(uTex, vec2(clamp(vUv.x - shift, 0.0, 1.0), vUv.y));
+      gl_FragColor = vec4(mix(src.rgb, pulled.rgb, step(uThreshold, lum)), src.a);
+    }`;
+
+  // Classic 2D value noise overlay — animated, blends over the layer.
+  const NOISEFX = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uScale, uContrast, uMix, uTheta;
+    float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+    float vnoise(vec2 p){
+      vec2 i=floor(p), f=fract(p);
+      float a=hash(i),b=hash(i+vec2(1,0)),c=hash(i+vec2(0,1)),d=hash(i+vec2(1,1));
+      vec2 u=f*f*(3.0-2.0*f);
+      return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y;
+    }
+    void main(){
+      vec4 src = texture2D(uTex, vUv);
+      vec2 p = vUv*uScale + vec2(uTheta*0.3, uTheta*0.2);
+      float n = vnoise(p)*0.6 + vnoise(p*2.0)*0.3 + vnoise(p*4.0)*0.1;
+      n = clamp((n-0.5)*uContrast + 0.5, 0.0, 1.0);
+      gl_FragColor = vec4(mix(src.rgb, vec3(n), uMix), src.a);
+    }`;
+
+  // Rain — animated streaks running down the layer, refracting what's behind them.
+  const RAIN = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uDensity, uSpeed, uRefract, uTheta;
+    float hash(float x){ return fract(sin(x*127.1)*43758.5453); }
+    void main(){
+      float cols = uDensity;
+      float col = floor(vUv.x * cols);
+      float speed = 0.4 + hash(col)*0.9;
+      float y = fract(vUv.y + uTheta*uSpeed*0.1*speed + hash(col)*10.0);
+      float drop = smoothstep(0.0, 0.06, y) * smoothstep(0.5, 0.0, y);
+      vec2 uv = vUv + vec2(0.0, drop*uRefract*0.02);
+      vec4 src = texture2D(uTex, clamp(uv,0.0,1.0));
+      gl_FragColor = vec4(src.rgb + drop*0.12, src.a);
+    }`;
+
+  // Geometric tile — kaleidoscope-ish mirrored tiling with an animated rotation.
+  const TILE = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uTiles, uRotate, uTheta;
+    void main(){
+      vec2 uv = vUv * uTiles;
+      uv = abs(fract(uv) - 0.5);            // mirror within each tile
+      float a = uRotate + uTheta*0.2;
+      float c = cos(a), s = sin(a);
+      uv = mat2(c,-s,s,c) * (uv-0.25) + 0.5;
+      gl_FragColor = texture2D(uTex, clamp(uv,0.0,1.0));
+    }`;
+
+  // Fire — animated flame gradient rising from the bottom, blended over the layer.
+  const FIRE = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uHeight, uIntensity, uMix, uTheta;
+    float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+    float vnoise(vec2 p){
+      vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.0-2.0*f);
+      return mix(mix(hash(i),hash(i+vec2(1,0)),u.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x), u.y);
+    }
+    void main(){
+      vec4 src = texture2D(uTex, vUv);
+      vec2 p = vec2(vUv.x*6.0, vUv.y*4.0 - uTheta*1.2);
+      float n = vnoise(p)*0.6 + vnoise(p*2.0)*0.4;
+      float flame = pow(1.0-vUv.y, 1.5) * uHeight + n*0.5;
+      float f = smoothstep(0.35, 0.9, flame) * uIntensity;
+      vec3 fire = vec3(f*1.5, f*f*0.7, f*f*f*0.2); // hot bottom -> cool top
+      gl_FragColor = vec4(clamp(src.rgb + fire*uMix, 0.0, 1.0), src.a);
+    }`;
+
+  // Animated gradient — a full generative mesh-gradient wash. Ignores the layer's own pixels
+  // (it's a source, not a filter), so it works dropped on a solid layer or blended over one.
+  // Four color stops that drift; the whole thing eases through the loop seamlessly.
+  const GRADIENT = `
+    precision highp float; varying vec2 vUv;
+    uniform sampler2D uTex; uniform vec2 uResolution;
+    uniform float uSpeed, uScale, uMix, uAngle, uTheta;
+    uniform vec3 uColorA, uColorB, uColorC, uColorD;
+    void main(){
+      float t = uTheta * uSpeed;
+      float c = cos(uAngle), s = sin(uAngle);
+      vec2 uv = mat2(c,-s,s,c) * (vUv-0.5) + 0.5;
+      // four moving radial fields, normalized into weights
+      vec2 pa = vec2(0.3+0.2*sin(t*0.7), 0.3+0.2*cos(t*0.9));
+      vec2 pb = vec2(0.7+0.2*sin(t*1.1+2.0), 0.35+0.2*cos(t*0.6+1.0));
+      vec2 pc = vec2(0.35+0.2*sin(t*0.8+4.0), 0.7+0.2*cos(t*1.2+3.0));
+      vec2 pd = vec2(0.7+0.2*sin(t*0.5+1.5), 0.7+0.2*cos(t*0.9+5.0));
+      float wa = 1.0/(distance(uv,pa)*uScale+0.15);
+      float wb = 1.0/(distance(uv,pb)*uScale+0.15);
+      float wc = 1.0/(distance(uv,pc)*uScale+0.15);
+      float wd = 1.0/(distance(uv,pd)*uScale+0.15);
+      float sum = wa+wb+wc+wd;
+      vec3 grad = (uColorA*wa + uColorB*wb + uColorC*wc + uColorD*wd)/sum;
+      vec4 src = texture2D(uTex, vUv);
+      gl_FragColor = vec4(mix(src.rgb, grad, uMix), max(src.a, uMix));
+    }`;
+
   const LIBRARY = [
     {id:'bloom', label:'Bloom', group:'Light', frag:BLOOM, cost:14,
       params:[{key:'threshold',min:0,max:1,step:0.01,default:0.55},
@@ -281,7 +482,54 @@ window.ForgeFX = (function(){
       params:[{key:'size',min:0.05,max:0.6,step:0.01,default:0.22},
               {key:'speed',min:0,max:4,step:0.05,default:1.0},
               {key:'strength',min:0,max:3,step:0.05,default:1.0},
-              {key:'glow',min:0,max:1,step:0.01,default:0.15}]}
+              {key:'glow',min:0,max:1,step:0.01,default:0.15}]},
+    {id:'lens', label:'Lens', group:'Distortion', frag:LENS, cost:4,
+      params:[{key:'strength',min:-1.5,max:1.5,step:0.01,default:0.4},
+              {key:'zoom',min:0.5,max:1.5,step:0.01,default:1.0}]},
+
+    {id:'blur', label:'Blur', group:'Light', frag:BLUR, cost:16,
+      params:[{key:'radius',min:0.5,max:6,step:0.1,default:2.0},
+              {key:'angle',min:0,max:6.28,step:0.01,default:0,degrees:false}]},
+    {id:'edge', label:'Edge detect', group:'Structure', frag:EDGE, cost:10,
+      params:[{key:'thickness',min:0.5,max:4,step:0.1,default:1.2},
+              {key:'intensity',min:0.2,max:4,step:0.05,default:1.4},
+              {key:'mix',min:0,max:1,step:0.01,default:1.0}]},
+    {id:'rgbshift', label:'RGB shift', group:'Light', frag:RGBSHIFT, cost:4, animated:true,
+      params:[{key:'amount',min:0,max:5,step:0.05,default:1.4},
+              {key:'angle',min:0,max:6.28,step:0.01,default:0}]},
+    {id:'badtv', label:'Bad TV', group:'Distortion', frag:BADTV, cost:6, animated:true,
+      params:[{key:'distortion',min:0,max:3,step:0.05,default:1.0},
+              {key:'roll',min:0,max:4,step:0.05,default:1.0},
+              {key:'noise',min:0,max:0.5,step:0.005,default:0.08}]},
+    {id:'pixsort', label:'Pixel sort', group:'Texture', frag:PIXSORT, cost:7, animated:true,
+      params:[{key:'threshold',min:0,max:1,step:0.01,default:0.6},
+              {key:'length',min:0,max:300,step:5,default:80}]},
+
+    {id:'noisefx', label:'Noise', group:'Texture', frag:NOISEFX, cost:6, animated:true,
+      params:[{key:'scale',min:2,max:60,step:1,default:14},
+              {key:'contrast',min:0.5,max:4,step:0.05,default:1.4},
+              {key:'mix',min:0,max:1,step:0.01,default:0.4}]},
+    {id:'rain', label:'Rain', group:'Distortion', frag:RAIN, cost:7, animated:true,
+      params:[{key:'density',min:10,max:120,step:2,default:50},
+              {key:'speed',min:0,max:5,step:0.05,default:1.5},
+              {key:'refract',min:0,max:3,step:0.05,default:1.0}]},
+    {id:'tile', label:'Geometric tile', group:'Structure', frag:TILE, cost:5, animated:true,
+      params:[{key:'tiles',min:1,max:16,step:1,default:4},
+              {key:'rotate',min:0,max:6.28,step:0.01,default:0}]},
+    {id:'fire', label:'Fire', group:'Texture', frag:FIRE, cost:8, animated:true,
+      params:[{key:'height',min:0.2,max:2,step:0.05,default:0.9},
+              {key:'intensity',min:0.2,max:3,step:0.05,default:1.3},
+              {key:'mix',min:0,max:1,step:0.01,default:0.7}]},
+
+    {id:'gradient', label:'Gradient', group:'Generative', frag:GRADIENT, cost:5, animated:true,
+      params:[{key:'speed',min:0,max:3,step:0.05,default:1.0},
+              {key:'scale',min:0.5,max:5,step:0.05,default:1.6},
+              {key:'angle',min:0,max:6.28,step:0.01,default:0},
+              {key:'mix',min:0,max:1,step:0.01,default:1.0}],
+      colors:[{key:'colorA',default:[0.11,0.44,0.88]},   // brand blue
+              {key:'colorB',default:[0.90,0.14,0.49]},   // brand pink
+              {key:'colorC',default:[1.00,0.54,0.24]},   // brand orange
+              {key:'colorD',default:[0.18,0.83,0.75]}]}  // brand cyan
   ];
 
   const WAVES = [
@@ -309,7 +557,12 @@ window.ForgeFX = (function(){
       params[p.key] = p.default;
       anim[p.key] = {on:false, amount:0.4, speed:1, wave:'sine', phase:0};
     });
-    return {uid: uid++, typeId, enabled:true, downsample:1, params, anim};
+    const inst = {uid: uid++, typeId, enabled:true, downsample:1, params, anim};
+    if(type.colors){
+      inst.colors = {};
+      type.colors.forEach(ck => { inst.colors[ck.key] = ck.default.slice(); });
+    }
+    return inst;
   }
   function resetInstance(inst){
     const type = typeById(inst.typeId);
@@ -318,6 +571,9 @@ window.ForgeFX = (function(){
       inst.params[p.key] = p.default;
       inst.anim[p.key] = {on:false, amount:0.4, speed:1, wave:'sine', phase:0};
     });
+    if(type.colors && inst.colors){
+      type.colors.forEach(ck => { inst.colors[ck.key] = ck.default.slice(); });
+    }
     inst.downsample = 1;
   }
 
@@ -422,6 +678,9 @@ window.ForgeFX = (function(){
         t.uniforms.uAtlas = gl.getUniformLocation(t.program,'uAtlas');
         t.uniforms.uChars = gl.getUniformLocation(t.program,'uChars');
       }
+      if(t.colors) t.colors.forEach(ck => {
+        t.uniforms[ck.key] = gl.getUniformLocation(t.program, 'u'+ck.key[0].toUpperCase()+ck.key.slice(1));
+      });
     });
     quadBuf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
@@ -491,6 +750,10 @@ window.ForgeFX = (function(){
         gl.uniform1f(type.uniforms[p.key], v);
       });
       if(type.animated) gl.uniform1f(type.uniforms.uTheta, theta);
+      if(type.colors) type.colors.forEach(ck => {
+        const c = (inst.colors && inst.colors[ck.key]) || ck.default;
+        gl.uniform3f(type.uniforms[ck.key], c[0], c[1], c[2]);
+      });
       if(type.atlas && atlas){
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, atlas.tex);

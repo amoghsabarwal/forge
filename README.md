@@ -37,7 +37,7 @@ COMPOSITION
 
 - **Layers** — image, video, text, and solid layers with independent transforms and blend modes. Drag to reorder, rename, hide, lock, solo, duplicate.
 - **Direct manipulation** — select a layer and drag, scale, or rotate it right on the canvas.
-- **15 effects** across Light, Texture, Structure, and Distortion — Bloom, Color grade, Vignette, Chromatic, Halftone, Dither, Grain, ASCII, Pixelate, Outline, Contour, Animated grid, Scanlines, Ripple, Blobs. Every stack is ordered, non-destructive, and reorderable.
+- **26 effects** across Light, Texture, Structure, Distortion, and Generative — including Bloom, Blur, Color grade, Vignette, Chromatic, RGB shift, Halftone, Dither, Grain, ASCII, Pixelate, Noise, Pixel sort, Fire, Outline, Edge detect, Contour, Animated grid, Scanlines, Geometric tile, Ripple, Blobs, Lens, Bad TV, Rain, and an animated Gradient. Every stack is ordered, non-destructive, and reorderable.
 - **Keyframe animation** — set a value at the playhead with one click; motion eases between keys instead of moving linearly.
 - **Oscillators** — drive any parameter with a continuous waveform (sine, triangle, saw, pulse, noise) instead of, or on top of, keyframes.
 - **Video export** — MP4 or WebM, with resolution, frame-rate, and duration controls. Rendered frame-by-frame for even timing, up to 3× resolution. (MP4 depends on browser support; where it's unavailable Forge falls back to WebM and tells you.)
@@ -113,3 +113,5 @@ Working prototype, actively evolving.
 ## Credits
 
 Built by [Studio Deadzolt](https://deadzolt.studio).
+
+The effect set draws inspiration from the [WebGL shader examples](https://webgl-shaders.com/) by Javier Gracia Carpio — the *effects* (edge detection, RGB shift, bad TV, and so on) informed what Forge offers, though every shader here is an original implementation written for Forge's per-layer, alpha-preserving pipeline.

@@ -35,6 +35,15 @@
     toast._t = setTimeout(() => toastEl.classList.remove('show'), action ? 5000 : 2600);
   }
   function fmt(v, step){ return Number.isInteger(step) ? Math.round(v) : (+v).toFixed(2); }
+  // effect color swatches store 0..1 rgb triples; <input type=color> speaks hex
+  function rgbToHex(c){
+    const h = n => Math.max(0,Math.min(255,Math.round(n*255))).toString(16).padStart(2,'0');
+    return '#' + h(c[0]) + h(c[1]) + h(c[2]);
+  }
+  function hexToRgb(hex){
+    const n = parseInt(hex.slice(1),16);
+    return [((n>>16)&255)/255, ((n>>8)&255)/255, (n&255)/255];
+  }
 
   /* ================= canvas view (zoom / fit) ================= */
 
@@ -391,6 +400,27 @@
           body.appendChild(box);
         }
       });
+
+      // color swatches — only effects that declare `colors` (currently the gradient) get these
+      if(type.colors){
+        type.colors.forEach(ck => {
+          const row = el('div','param-row');
+          const lab = el('div','param-label');
+          lab.appendChild(el('b',null,ck.key.replace('color','color ')));
+          row.appendChild(lab);
+          const picker = document.createElement('input');
+          picker.type = 'color';
+          picker.className = 'fx-color';
+          const cur = (inst.colors && inst.colors[ck.key]) || ck.default;
+          picker.value = rgbToHex(cur);
+          picker.addEventListener('input', () => {
+            if(!inst.colors) inst.colors = {};
+            inst.colors[ck.key] = hexToRgb(picker.value);
+          });
+          row.appendChild(picker);
+          body.appendChild(row);
+        });
+      }
 
       const dsRow = el('div','param-row');
       const dsLab = el('div','param-label');
