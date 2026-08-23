@@ -633,6 +633,11 @@ window.ForgeComp = (function(){
 
   function start(){
     ForgeFX.init();
+    // attachView() already ran applyFrameSize() once, but ForgeFX.resize() silently no-ops
+    // before ForgeFX.init() has set it up (this was the actual cause of "effects don't show
+    // until I change the frame" — the fx canvas was stuck at its default 300×150 size).
+    // Re-apply now that fx is actually ready, so the very first render is correctly sized.
+    applyFrameSize();
     requestAnimationFrame(tick);
     setInterval(save, 2000);
     window.addEventListener('beforeunload', save);

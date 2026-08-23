@@ -2,20 +2,23 @@
    Layout regions: toolbar (top) / scene (left) / canvas (centre) / inspector (right) / timeline (bottom). */
 
 :root{
-  --bg-0:#0a0908; --bg-1:#131110; --bg-2:#1c1917; --bg-3:#252220;
-  --border:#2c2825; --border-hi:#3a3531;
-  --text-0:#f2efea; --text-1:#b8b1a9; --text-2:#726b64;
+  /* Shifted from the old warm near-black (tied to the retired orange-ember identity) to a
+     cooler neutral that reads as the same family as the brand gradient's blues without
+     turning the working panels themselves into a color surface. */
+  --bg-0:#0a0b0f; --bg-1:#121319; --bg-2:#1a1b22; --bg-3:#23242c;
+  --border:#282a34; --border-hi:#383a46;
+  --text-0:#f5f4f2; --text-1:#b4b3ba; --text-2:#75747d;
   --accent:#ff5a1f; --accent-dim:#5c2410;
   --mono:'Satoshi', ui-monospace, monospace;
   --sans:'Satoshi', system-ui, sans-serif;
   --panel-w:264px;
   --timeline-h:186px;
   --track-name-w:150px;
-  /* Brand-refresh accent palette, kept alongside --accent (which stays orange and drives
-     every functional/interactive color in the working surface). Used sparingly here — just
-     the wordmark — because a dark, low-chroma panel is what a dense control surface needs;
-     see landing.css for where the fuller gradient treatment lives. */
-  --brand-blue:#1d5fd6; --brand-pink:#e6237e; --brand-orange:#ff8a3d;
+  /* The brand gradient itself — same family used on the landing page, applied here only to
+     the toolbar wash, the wordmark, and primary/active accents. A dense control surface
+     still needs a stable, low-chroma base to actually read sliders and layer names against;
+     this is "kinda similar," not a repaint of every panel. */
+  --brand-blue:#1d6fe0; --brand-pink:#e6237e; --brand-orange:#ff8a3d; --brand-cyan:#2fd4c0;
 }
 
 *{ box-sizing:border-box; }
@@ -27,11 +30,18 @@ body{ background:var(--bg-0); color:var(--text-0); font-family:var(--sans); over
 
 /* ---- toolbar ---- */
 .toolbar{ display:flex; align-items:center; gap:16px; padding:9px 16px; flex-shrink:0;
-  background:var(--bg-1); border-bottom:1px solid var(--border); }
-.mark{ display:inline-block; font-family:var(--sans); font-weight:700; font-style:italic;
-  font-size:16px; letter-spacing:-0.01em; text-decoration:none; flex-shrink:0;
-  background:linear-gradient(120deg, var(--brand-blue), var(--brand-pink) 55%, var(--brand-orange));
-  -webkit-background-clip:text; background-clip:text; color:transparent; }
+  background:
+    linear-gradient(90deg, rgba(29,111,224,0.14), rgba(230,35,126,0.10) 45%, rgba(255,138,61,0.08) 80%),
+    var(--bg-1);
+  border-bottom:1px solid var(--border); }
+.mark{ display:inline-flex; align-items:center; text-decoration:none; flex-shrink:0; }
+.wordmark{ display:block; width:22px; height:22px; background-color:var(--text-0);
+  -webkit-mask-image:url('wordmark.svg'); mask-image:url('wordmark.svg');
+  -webkit-mask-size:contain; mask-size:contain;
+  -webkit-mask-repeat:no-repeat; mask-repeat:no-repeat;
+  -webkit-mask-position:center; mask-position:center;
+  transition:background-color .15s; }
+.mark:hover .wordmark{ background-color:var(--brand-orange); }
 .tool-group{ display:flex; align-items:center; gap:6px; }
 .tool-group.right{ margin-left:auto; }
 .zoom-group{ margin-left:8px; }

@@ -3,61 +3,32 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Forge — Design Interactive Motion for the Web</title>
-<meta name="description" content="Forge is a visual canvas editor for designing interactive motion for the web with shaders, media, 3D and interaction.">
+<title>Forge — Make motion a system, not a render.</title>
+<meta name="description" content="Forge is a browser-based composition and motion-design editor. Build expressive, animated visuals directly in the browser and ship the result as a real web experience.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://api.fontshare.com">
 <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="landing.css">
 </head>
-<body class="landing-body">
-<div id="landing">
-  <nav class="lnav">
-    <a class="shell-mark" href="index.html">forge</a>
-    <a class="btn btn-ghost btn-sm lnav-cta" href="editor.html">Open editor</a>
-  </nav>
+<body>
+  <main class="landing">
+    <span class="wordmark" role="img" aria-label="Forge"></span>
 
-  <section class="hero">
-    <div class="mesh" aria-hidden="true">
-      <span class="blob blob-blue"></span>
-      <span class="blob blob-pink"></span>
-      <span class="blob blob-orange"></span>
-      <span class="blob blob-cyan"></span>
-    </div>
-    <div class="hero-inner">
-      <span class="eyebrow">VISUAL CANVAS · WEB MOTION</span>
-      <h1>Design Interactive<br>Motion for the Web.</h1>
-      <p class="hero-sub">Create with shaders, media, 3D, and interaction in a visual canvas editor. Art-direct the motion, build the experience, and ship production-ready components to the web.</p>
-      <div class="hero-actions">
-        <a href="editor.html" class="btn btn-primary btn-lg">Open editor →</a>
-        <a href="https://github.com/amoghsabarwal/forge" class="btn btn-ghost btn-lg" target="_blank" rel="noopener">View source</a>
-      </div>
-    </div>
-  </section>
+    <h1>Make motion a system,<br>not a render.</h1>
+    <p class="sub">Build expressive, animated visuals directly in the browser.
+      Compose media, typography, shaders, and effects on one visual canvas,
+      then ship the result as a real web experience.</p>
 
-  <section class="process">
-    <span class="eyebrow eyebrow-center">THE WORKFLOW</span>
-    <div class="process-grid">
-      <div class="step"><span class="step-num">01</span><h3>Compose</h3><p>Bring media, type, shaders and 3D elements into a visual canvas. Keep every asset independent and editable.</p></div>
-      <div class="step"><span class="step-num">02</span><h3>Animate</h3><p>Stack effects, direct cameras, add interaction and build motion with a timeline instead of exporting a flat video.</p></div>
-      <div class="step"><span class="step-num">03</span><h3>Ship</h3><p>Turn the composition into a production-ready web component rather than stopping at a render.</p></div>
+    <div class="actions">
+      <a class="btn btn-ghost" href="https://github.com/amoghsabarwal/forge" target="_blank" rel="noopener">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        View Source
+      </a>
+      <a class="btn btn-primary" href="editor.html">
+        Open Editor
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
     </div>
-  </section>
-
-  <section class="modes">
-    <span class="eyebrow eyebrow-center">ONE EDITOR · MANY PRIMITIVES</span>
-    <div class="modes-grid">
-      <div class="mode-card"><h3>Shaders</h3><p>Procedural visual effects, distortion, halftone, dither, grain, bloom, color and custom GPU-driven treatments.</p></div>
-      <div class="mode-card"><h3>Media</h3><p>Images, logos, video and typography as independent layers with their own transforms, effects and animation.</p></div>
-      <div class="mode-card"><h3>3D</h3><p>Walls, globes, tunnels, camera flythroughs, materials and spatial compositions inside the same canvas.</p></div>
-      <div class="mode-card"><h3>Interaction</h3><p>Build motion that responds to cursor, hover, scroll and other web inputs — then ship it as an interactive component.</p></div>
-    </div>
-  </section>
-
-  <footer class="lfooter">
-    <span class="brand-tag">forge · prototype</span>
-    <p>Design the motion visually. Ship the result to the web.</p>
-    <a href="https://github.com/amoghsabarwal/forge" target="_blank" rel="noopener">GitHub →</a>
-  </footer>
-</div>
+  </main>
 </body>
 </html>
