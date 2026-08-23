@@ -40,7 +40,7 @@ COMPOSITION
 - **15 effects** across Light, Texture, Structure, and Distortion — Bloom, Color grade, Vignette, Chromatic, Halftone, Dither, Grain, ASCII, Pixelate, Outline, Contour, Animated grid, Scanlines, Ripple, Blobs. Every stack is ordered, non-destructive, and reorderable.
 - **Keyframe animation** — set a value at the playhead with one click; motion eases between keys instead of moving linearly.
 - **Oscillators** — drive any parameter with a continuous waveform (sine, triangle, saw, pulse, noise) instead of, or on top of, keyframes.
-- **Video export** — rendered frame-by-frame for even timing, up to 3× resolution, as a looping WebM.
+- **Video export** — MP4 or WebM, with resolution, frame-rate, and duration controls. Rendered frame-by-frame for even timing, up to 3× resolution. (MP4 depends on browser support; where it's unavailable Forge falls back to WebM and tells you.)
 - **Runs entirely client-side** — no uploads, no accounts, no server.
 
 ## Video layers
@@ -106,7 +106,7 @@ ui.js           panel logic, canvas interaction, timeline
 
 Working prototype, actively evolving.
 
-- **Settings persist; images don't.** Layers, transforms, effects, and keyframes are saved to `localStorage` and restored on your next visit. Image pixels aren't — re-add the file and everything else snaps back into place.
+- **Projects save into the browser or as files.** Use Save to keep a named project in this browser (images embedded, so they come back intact), Open to browse and reload saved projects, or Download .forge to get a portable file you can move between machines. A fresh session always starts clean — if you have unsaved work from last time, Forge offers to restore it rather than loading it silently.
 - **No object tracking yet.** Attaching an effect to a tracked subject in the frame is a real computer-vision feature, not a toggle, and it hasn't been built.
 - **The effects pass is real-time, not offline-rendered.** A heavy stack at 3× export resolution may drop frames rather than corrupt the file. Per-effect downsampling is the fix.
 

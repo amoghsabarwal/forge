@@ -514,45 +514,73 @@ window.ForgeComp = (function(){
 
   /* ---------------- export ---------------- */
 
+  // Export controls: format ('mp4' | 'webm'), resolution multiplier, fps, and duration.
+  // Honesty note: true H.264 MP4 out of MediaRecorder is only available in some browsers
+  // (Safari, and Chrome with certain codecs). When MP4 is requested we try the browser's
+  // MP4 codecs first and fall back to WebM, reporting to the caller which format actually
+  // came out — rather than silently handing back a WebM with an .mp4 name.
+  function supportedMp4Mime(){
+    if(typeof MediaRecorder === 'undefined') return null;
+    const candidates = ['video/mp4;codecs=h264', 'video/mp4;codecs=avc1', 'video/mp4'];
+    return candidates.find(m => { try{ return MediaRecorder.isTypeSupported(m); }catch(e){ return false; } }) || null;
+  }
+  function exportCapabilities(){
+    return { mp4: !!supportedMp4Mime(), webm: typeof MediaRecorder !== 'undefined' };
+  }
+
   function exportVideo(opts, onStatus){
     opts = opts || {};
     if(typeof MediaRecorder === 'undefined'){ onStatus && onStatus('error','Recording is not supported in this browser.'); return; }
-    const mult = state.exportResMult;
-    const outW = state.frame.w*mult, outH = state.frame.h*mult;
 
+    const mult = opts.resMult || state.exportResMult || 1;
+    const fps = Math.max(1, Math.min(60, opts.fps || 30));
+    const dur = Math.max(0.1, opts.duration || state.duration);
+    const wantMp4 = opts.format === 'mp4';
+
+    const outW = Math.round(state.frame.w*mult), outH = Math.round(state.frame.h*mult);
     const out = document.createElement('canvas');
     out.width = outW; out.height = outH;
     const octx = out.getContext('2d');
-
     if(typeof out.captureStream !== 'function'){ onStatus && onStatus('error','Recording is not supported in this browser.'); return; }
 
-    let mime = 'video/webm;codecs=vp9';
-    if(!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8';
-    if(!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+    // pick a mime: honor MP4 if asked and available, else fall back to the best WebM
+    let mime, actualFormat;
+    if(wantMp4){
+      mime = supportedMp4Mime();
+      if(mime){ actualFormat = 'mp4'; }
+    }
+    if(!mime){
+      mime = 'video/webm;codecs=vp9';
+      if(!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm;codecs=vp8';
+      if(!MediaRecorder.isTypeSupported(mime)) mime = 'video/webm';
+      actualFormat = 'webm';
+    }
 
     let recorder;
     try{
-      recorder = new MediaRecorder(out.captureStream(30), {mimeType:mime, videoBitsPerSecond:14000000});
+      recorder = new MediaRecorder(out.captureStream(fps), {mimeType:mime, videoBitsPerSecond:14000000});
     } catch(err){ onStatus && onStatus('error','Could not start recording.'); return; }
 
     const chunks = [];
     const wasPlaying = playing, resumeAt = time;
     exporting = true; playing = false;
     state.layers.forEach(l => { if(l.kind==='video' && l.video && l.video.el) l.video.el.pause(); });
-    onStatus && onStatus('start');
+    onStatus && onStatus('start', {format: actualFormat, requestedMp4: wantMp4});
 
     recorder.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = () => {
       exporting = false;
       time = resumeAt; playing = wasPlaying;
       if(playing){ playStart = performance.now(); playFrom = time; }
-      const blob = new Blob(chunks, {type:'video/webm'});
+      const ext = actualFormat === 'mp4' ? 'mp4' : 'webm';
+      const blob = new Blob(chunks, {type: actualFormat === 'mp4' ? 'video/mp4' : 'video/webm'});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      a.href = url; a.download = 'forge-composition.webm';
+      a.href = url; a.download = 'forge-composition.' + ext;
       document.body.appendChild(a); a.click(); a.remove();
       setTimeout(() => URL.revokeObjectURL(url), 4000);
-      onStatus && onStatus('done');
+      // tell the UI what actually came out, so it can warn if MP4 fell back to WebM
+      onStatus && onStatus('done', {format: actualFormat, fellBack: wantMp4 && actualFormat !== 'mp4'});
       emit('transport');
     };
 
@@ -562,7 +590,7 @@ window.ForgeComp = (function(){
     // waits for the browser to confirm it landed there — slower than the live preview, but
     // it's what makes the exported video frame-accurate instead of a blurry approximation.
     const hasVideo = state.layers.some(l => l.kind === 'video');
-    const fps = 30, total = Math.max(1, Math.round(state.duration*fps));
+    const total = Math.max(1, Math.round(dur*fps));
     let frame = 0;
     recorder.start();
     async function step(){
@@ -580,55 +608,196 @@ window.ForgeComp = (function(){
     step();
   }
 
-  /* ---------------- persistence (settings only; images stay in the browser) ---------------- */
+  /* ---------------- persistence ----------------
+   * Two layers of storage:
+   *   - an autosave slot ('last session'), written continuously but NOT loaded on boot —
+   *     a fresh session starts clean, and the user is offered a one-click restore instead.
+   *   - named projects, each self-contained (images embedded as data URLs) so they survive
+   *     properly rather than coming back as empty image layers. These are what "Save" and
+   *     the project browser operate on.
+   */
 
-  const KEY = 'forge:composition:v1';
-  function serialize(){
+  const AUTOSAVE_KEY = 'forge:autosave:v2';
+  const PROJECTS_KEY = 'forge:projects:v2';
+  const MAX_EMBED_BYTES = 8 * 1024 * 1024; // per-project ceiling on embedded image data
+
+  // Turn an <img>/decoded bitmap into a data URL so it can live inside a saved project.
+  function imageToDataURL(img){
+    try{
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext('2d').drawImage(img, 0, 0);
+      return c.toDataURL('image/png');
+    } catch(e){ return null; } // tainted canvas (cross-origin) — skip embedding
+  }
+
+  // Serialize the whole composition. `embedImages` controls whether image pixels are baked
+  // in (true for named projects, false for the lightweight autosave slot).
+  function serialize(embedImages){
     return {
+      version: 2,
       frameId: state.frame.id,
       duration: state.duration,
       fpsCap: state.fpsCap,
       exportResMult: state.exportResMult,
       compFx: state.compFx,
-      layers: state.layers.map(l => ({
-        kind:l.kind, name:l.name, visible:l.visible, locked:l.locked,
-        transform:l.transform, blend:l.blend, fx:l.fx, keys:l.keys,
-        text:l.text, solid:l.solid
-      }))
+      layers: state.layers.map(l => {
+        const base = {
+          kind:l.kind, name:l.name, visible:l.visible, locked:l.locked,
+          transform:l.transform, blend:l.blend, fx:l.fx, keys:l.keys,
+          text:l.text, solid:l.solid
+        };
+        if(embedImages && l.kind === 'image' && l.img) base.imageData = imageToDataURL(l.img);
+        // video can't be embedded (too large) — it comes back needing the file re-added
+        return base;
+      })
     };
   }
-  let lastSaved = '';
-  function save(){
-    try{
-      const json = JSON.stringify(serialize());
-      if(json !== lastSaved){ localStorage.setItem(KEY, json); lastSaved = json; }
-    } catch(e){ /* storage unavailable */ }
-  }
-  function load(){
-    try{
-      const raw = localStorage.getItem(KEY);
-      if(!raw) return false;
-      const s = JSON.parse(raw);
-      const f = FRAME_PRESETS.find(p => p.id === s.frameId);
-      if(f) state.frame = f;
-      if(typeof s.duration === 'number') state.duration = s.duration;
-      if(typeof s.fpsCap === 'number') state.fpsCap = s.fpsCap;
-      if(typeof s.exportResMult === 'number') state.exportResMult = s.exportResMult;
-      if(Array.isArray(s.compFx)) state.compFx = s.compFx;
-      if(Array.isArray(s.layers)){
-        state.layers = s.layers.map(sl => {
-          const l = makeLayer(sl.kind, sl.name);
-          Object.assign(l, {
-            visible:sl.visible !== false, locked:!!sl.locked,
-            transform:Object.assign(l.transform, sl.transform||{}),
-            blend:sl.blend||'normal', fx:sl.fx||[], keys:sl.keys||{},
-            text:Object.assign(l.text, sl.text||{}), solid:Object.assign(l.solid, sl.solid||{})
-          });
-          return l; // image layers come back without pixels — the user re-adds those
-        });
+
+  // Rebuild live state from a serialized object. Returns a promise because embedded images
+  // decode asynchronously. `onImage` isn't needed — we await all decodes before finishing.
+  function deserialize(s){
+    const f = FRAME_PRESETS.find(p => p.id === s.frameId);
+    if(f) state.frame = f;
+    if(typeof s.duration === 'number') state.duration = s.duration;
+    if(typeof s.fpsCap === 'number') state.fpsCap = s.fpsCap;
+    if(typeof s.exportResMult === 'number') state.exportResMult = s.exportResMult;
+    state.compFx = Array.isArray(s.compFx) ? s.compFx : [];
+
+    const imageJobs = [];
+    state.layers = (Array.isArray(s.layers) ? s.layers : []).map(sl => {
+      const l = makeLayer(sl.kind, sl.name);
+      Object.assign(l, {
+        visible:sl.visible !== false, locked:!!sl.locked,
+        transform:Object.assign(l.transform, sl.transform||{}),
+        blend:sl.blend||'normal', fx:sl.fx||[], keys:sl.keys||{},
+        text:Object.assign(l.text, sl.text||{}), solid:Object.assign(l.solid, sl.solid||{})
+      });
+      if(sl.kind === 'image' && sl.imageData){
+        imageJobs.push(new Promise(res => {
+          const img = new Image();
+          img.onload = () => { l.img = img; res(); };
+          img.onerror = () => res();
+          img.src = sl.imageData;
+        }));
       }
-      return true;
-    } catch(e){ return false; }
+      return l;
+    });
+
+    applyFrameSize();
+    select('composition');
+    return Promise.all(imageJobs).then(() => { emit('layers'); emit('loaded'); });
+  }
+
+  // ---- autosave slot (silent, continuous, never auto-loaded) ----
+  let lastSaved = '';
+  function autosave(){
+    try{
+      const json = JSON.stringify(serialize(false));
+      if(json !== lastSaved){ localStorage.setItem(AUTOSAVE_KEY, json); lastSaved = json; }
+    } catch(e){ /* storage unavailable or full */ }
+  }
+  function hasAutosave(){
+    try{ return !!localStorage.getItem(AUTOSAVE_KEY); } catch(e){ return false; }
+  }
+  function restoreAutosave(){
+    try{
+      const raw = localStorage.getItem(AUTOSAVE_KEY);
+      if(!raw) return Promise.resolve(false);
+      return deserialize(JSON.parse(raw)).then(() => true);
+    } catch(e){ return Promise.resolve(false); }
+  }
+
+  // ---- named projects ----
+  function readProjectIndex(){
+    try{ return JSON.parse(localStorage.getItem(PROJECTS_KEY)) || []; }
+    catch(e){ return []; }
+  }
+  function writeProjectIndex(list){
+    try{ localStorage.setItem(PROJECTS_KEY, JSON.stringify(list)); return true; }
+    catch(e){ return false; }
+  }
+  function listProjects(){
+    // newest first; index stores metadata only, the payload lives in its own key
+    return readProjectIndex().sort((a,b) => b.updated - a.updated);
+  }
+  function projectThumbnail(){
+    // small snapshot of the current stage for the project browser
+    try{
+      const t = document.createElement('canvas');
+      const scale = 160 / Math.max(stage.width, stage.height);
+      t.width = Math.round(stage.width*scale); t.height = Math.round(stage.height*scale);
+      renderFrame(currentTime());
+      t.getContext('2d').drawImage(stage, 0, 0, t.width, t.height);
+      return t.toDataURL('image/jpeg', 0.6);
+    } catch(e){ return null; }
+  }
+  function saveProject(name, existingId){
+    const id = existingId || ('proj_' + Date.now().toString(36) + Math.random().toString(36).slice(2,6));
+    let payload;
+    try{ payload = JSON.stringify(serialize(true)); }
+    catch(e){ return {ok:false, error:'Could not serialize the project.'}; }
+
+    if(payload.length > MAX_EMBED_BYTES){
+      return {ok:false, error:'Project is too large to save in the browser (over 8MB of embedded images).'};
+    }
+    try{
+      localStorage.setItem('forge:proj:' + id, payload);
+    } catch(e){
+      return {ok:false, error:'Browser storage is full — delete an old project and try again.'};
+    }
+    const index = readProjectIndex().filter(p => p.id !== id);
+    index.push({ id, name: name || 'Untitled', updated: Date.now(), thumb: projectThumbnail() });
+    if(!writeProjectIndex(index)){
+      return {ok:false, error:'Browser storage is full — delete an old project and try again.'};
+    }
+    return {ok:true, id};
+  }
+  function loadProject(id){
+    try{
+      const raw = localStorage.getItem('forge:proj:' + id);
+      if(!raw) return Promise.resolve(false);
+      return deserialize(JSON.parse(raw)).then(() => true);
+    } catch(e){ return Promise.resolve(false); }
+  }
+  function deleteProject(id){
+    try{ localStorage.removeItem('forge:proj:' + id); } catch(e){}
+    writeProjectIndex(readProjectIndex().filter(p => p.id !== id));
+  }
+
+  // ---- export/import a .forge file (a project as a downloadable file) ----
+  function exportProjectFile(name){
+    const data = serialize(true);
+    data.name = name || 'forge-project';
+    const blob = new Blob([JSON.stringify(data)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = (name || 'forge-project') + '.forge';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  }
+  function importProjectFile(file){
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        try{ deserialize(JSON.parse(reader.result)).then(() => resolve(true)); }
+        catch(e){ reject(e); }
+      };
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  }
+
+  function newComposition(){
+    state.layers = [];
+    state.compFx = [];
+    state.duration = 6;
+    state.frame = FRAME_PRESETS[0];
+    applyFrameSize();
+    addSolidLayer();
+    select('composition');
+    time = 0;
+    emit('layers'); emit('loaded');
   }
 
   function start(){
@@ -639,8 +808,8 @@ window.ForgeComp = (function(){
     // Re-apply now that fx is actually ready, so the very first render is correctly sized.
     applyFrameSize();
     requestAnimationFrame(tick);
-    setInterval(save, 2000);
-    window.addEventListener('beforeunload', save);
+    setInterval(autosave, 2000);
+    window.addEventListener('beforeunload', autosave);
   }
 
   return {
@@ -652,7 +821,10 @@ window.ForgeComp = (function(){
     setKey, removeKey, clearKeys, keyList, hasKeys, valueAt, transformAt, fxPath,
     attachView, applyFrameSize, setFrame, layerBounds, renderFrame,
     currentTime, setTime, play, pause, togglePlay, isPlaying, perf,
-    exportVideo, load, start,
+    exportVideo, exportCapabilities, start,
+    hasAutosave, restoreAutosave,
+    listProjects, saveProject, loadProject, deleteProject,
+    exportProjectFile, importProjectFile, newComposition,
     get stageSize(){ return {w:stage.width, h:stage.height}; }
   };
 })();

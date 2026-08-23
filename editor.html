@@ -19,6 +19,15 @@
     <a class="mark" href="index.html" title="Back to home"><span class="wordmark"></span></a>
 
     <div class="tool-group">
+      <button class="btn btn-sm" id="newBtn" title="New composition">New</button>
+      <button class="btn btn-sm" id="saveBtn" title="Save project">Save</button>
+      <button class="btn btn-sm" id="openBtn" title="Open a saved project">Open</button>
+      <input type="file" id="projectInput" accept=".forge,application/json" hidden>
+    </div>
+
+    <div class="tool-divider"></div>
+
+    <div class="tool-group">
       <button class="btn btn-sm" id="addImageBtn" title="Add an image layer">+ Image</button>
       <button class="btn btn-sm" id="addVideoBtn" title="Add a video layer">+ Video</button>
       <button class="btn btn-sm" id="addTextBtn" title="Add a text layer">+ Text</button>
@@ -59,7 +68,8 @@
     </main>
 
     <!-- ── right: contextual inspector ── -->
-    <aside class="panel panel-right">
+    <aside class="panel panel-right" id="panelRight">
+      <div class="panel-resize" id="panelResize" title="Drag to resize"></div>
       <div class="panel-title">INSPECTOR</div>
       <div id="inspector" class="inspector"></div>
     </aside>
@@ -85,6 +95,7 @@
   </section>
 
   <div class="toast" id="toast"></div>
+  <div class="modal-host" id="modalHost" hidden></div>
 </div>
 
 <script src="fx.js"></script>

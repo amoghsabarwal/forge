@@ -756,15 +756,248 @@
   $('zoomInBtn').addEventListener('click', () => setZoom(zoom*1.2, true));
   $('zoomOutBtn').addEventListener('click', () => setZoom(zoom/1.2, true));
 
-  const exportBtn = $('exportBtn');
-  exportBtn.addEventListener('click', () => {
-    C.exportVideo({}, (status, pct) => {
-      if(status === 'start'){ exportBtn.disabled = true; exportBtn.textContent = 'Rendering…'; }
-      else if(status === 'progress'){ exportBtn.textContent = 'Rendering ' + pct + '%'; }
-      else if(status === 'done'){ exportBtn.disabled = false; exportBtn.textContent = 'Export'; toast('Composition exported as WebM.'); }
-      else if(status === 'error'){ exportBtn.disabled = false; exportBtn.textContent = 'Export'; toast(pct || 'Export failed.'); }
+  /* ================= modal host ================= */
+
+  const modalHost = $('modalHost');
+  function openModal(build){
+    modalHost.innerHTML = '';
+    modalHost.hidden = false;
+    const backdrop = el('div','modal-backdrop');
+    const panel = el('div','modal');
+    backdrop.appendChild(panel);
+    modalHost.appendChild(backdrop);
+    const close = () => { modalHost.hidden = true; modalHost.innerHTML = ''; };
+    backdrop.addEventListener('click', e => { if(e.target === backdrop) close(); });
+    build(panel, close);
+    return close;
+  }
+  function modalHeader(panel, title){
+    const head = el('div','modal-head');
+    head.appendChild(el('h2','modal-title', title));
+    panel.appendChild(head);
+    return head;
+  }
+
+  /* ================= File: New / Save / Open ================= */
+
+  $('newBtn').addEventListener('click', () => {
+    openModal((panel, close) => {
+      modalHeader(panel, 'New composition');
+      panel.appendChild(el('p','modal-text','This clears the current canvas. Save first if you want to keep it.'));
+      const row = el('div','modal-actions');
+      const cancel = el('button','btn','Cancel');
+      cancel.addEventListener('click', close);
+      const go = el('button','btn btn-primary','New composition');
+      go.addEventListener('click', () => { C.newComposition(); close(); toast('Started a new composition.'); });
+      row.appendChild(cancel); row.appendChild(go);
+      panel.appendChild(row);
     });
   });
+
+  let currentProjectName = '';
+  $('saveBtn').addEventListener('click', () => {
+    openModal((panel, close) => {
+      modalHeader(panel, 'Save project');
+      const label = el('label','modal-label','Project name');
+      panel.appendChild(label);
+      const input = document.createElement('input');
+      input.type='text'; input.className='modal-input'; input.value = currentProjectName || 'Untitled';
+      panel.appendChild(input);
+      input.focus(); input.select();
+
+      panel.appendChild(el('p','modal-text','Saves into this browser. Use “Download .forge” to keep a file you can move between machines.'));
+
+      const row = el('div','modal-actions');
+      const dl = el('button','btn','Download .forge');
+      dl.addEventListener('click', () => { C.exportProjectFile(input.value.trim() || 'forge-project'); toast('Downloaded .forge file.'); });
+      const cancel = el('button','btn','Cancel');
+      cancel.addEventListener('click', close);
+      const go = el('button','btn btn-primary','Save');
+      const doSave = () => {
+        const name = input.value.trim() || 'Untitled';
+        const res = C.saveProject(name);
+        if(res.ok){ currentProjectName = name; close(); toast('Saved “' + name + '”.'); }
+        else toast(res.error || 'Could not save.');
+      };
+      go.addEventListener('click', doSave);
+      input.addEventListener('keydown', e => { if(e.key === 'Enter') doSave(); });
+      row.appendChild(dl); row.appendChild(cancel); row.appendChild(go);
+      panel.appendChild(row);
+    });
+  });
+
+  const projectInput = $('projectInput');
+  projectInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if(file) C.importProjectFile(file)
+      .then(() => toast('Opened “' + file.name.replace(/\.forge$/,'') + '”.'))
+      .catch(() => toast('That file could not be opened.'));
+    projectInput.value = '';
+  });
+
+  $('openBtn').addEventListener('click', () => {
+    openModal((panel, close) => {
+      modalHeader(panel, 'Open project');
+      const projects = C.listProjects();
+
+      if(!projects.length){
+        panel.appendChild(el('p','modal-text','No saved projects yet. Save one, or open a .forge file from your computer.'));
+      } else {
+        const grid = el('div','project-grid');
+        projects.forEach(p => {
+          const card = el('div','project-card');
+          const thumb = el('div','project-thumb');
+          if(p.thumb){ const im = document.createElement('img'); im.src = p.thumb; thumb.appendChild(im); }
+          card.appendChild(thumb);
+          const meta = el('div','project-meta');
+          meta.appendChild(el('span','project-name', p.name));
+          const when = new Date(p.updated);
+          meta.appendChild(el('span','project-date', when.toLocaleDateString() + ' ' + when.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})));
+          card.appendChild(meta);
+          const del = el('button','project-del','×');
+          del.title = 'Delete';
+          del.addEventListener('click', ev => {
+            ev.stopPropagation();
+            C.deleteProject(p.id);
+            card.remove();
+            toast('Deleted “' + p.name + '”.');
+          });
+          card.appendChild(del);
+          card.addEventListener('click', () => {
+            C.loadProject(p.id).then(ok => {
+              if(ok){ currentProjectName = p.name; close(); toast('Opened “' + p.name + '”.'); }
+              else toast('Could not open that project.');
+            });
+          });
+          grid.appendChild(card);
+        });
+        panel.appendChild(grid);
+      }
+
+      const row = el('div','modal-actions');
+      const fromFile = el('button','btn','Open .forge file…');
+      fromFile.addEventListener('click', () => { close(); projectInput.click(); });
+      const cancel = el('button','btn','Close');
+      cancel.addEventListener('click', close);
+      row.appendChild(fromFile); row.appendChild(cancel);
+      panel.appendChild(row);
+    });
+  });
+
+  /* ================= Export dialog (format / resolution / fps / duration) ================= */
+
+  const exportBtn = $('exportBtn');
+  function runExport(opts){
+    exportBtn.disabled = true;
+    C.exportVideo(opts, (status, info) => {
+      if(status === 'start'){ exportBtn.textContent = 'Rendering…'; }
+      else if(status === 'progress'){ exportBtn.textContent = 'Rendering ' + info + '%'; }
+      else if(status === 'done'){
+        exportBtn.disabled = false; exportBtn.textContent = 'Export';
+        if(info && info.fellBack) toast('Your browser can’t export MP4 — saved as WebM instead.');
+        else toast('Exported as ' + (info && info.format ? info.format.toUpperCase() : 'video') + '.');
+      }
+      else if(status === 'error'){ exportBtn.disabled = false; exportBtn.textContent = 'Export'; toast(info || 'Export failed.'); }
+    });
+  }
+  exportBtn.addEventListener('click', () => {
+    const caps = C.exportCapabilities();
+    openModal((panel, close) => {
+      modalHeader(panel, 'Export video');
+
+      const opts = { format: caps.mp4 ? 'mp4' : 'webm', resMult: C.state.exportResMult || 1, fps: 30, duration: C.state.duration };
+
+      // format
+      panel.appendChild(el('label','modal-label','Format'));
+      const fmtSeg = el('div','segmented');
+      [['mp4','MP4'],['webm','WebM']].forEach(([v,lbl]) => {
+        const b = el('button','seg-btn'+(opts.format===v?' active':''), lbl);
+        if(v === 'mp4' && !caps.mp4){ b.classList.add('disabled'); b.title = 'Your browser can’t record MP4 directly'; }
+        b.addEventListener('click', () => {
+          opts.format = v;
+          [...fmtSeg.children].forEach(c=>c.classList.remove('active'));
+          b.classList.add('active');
+          mp4note.style.display = (v==='mp4' && !caps.mp4) ? 'block' : 'none';
+        });
+        fmtSeg.appendChild(b);
+      });
+      panel.appendChild(fmtSeg);
+      const mp4note = el('p','modal-hint','Your browser can’t record MP4 directly — this will fall back to WebM.');
+      mp4note.style.display = (opts.format==='mp4' && !caps.mp4) ? 'block' : 'none';
+      panel.appendChild(mp4note);
+
+      // resolution
+      panel.appendChild(el('label','modal-label','Resolution'));
+      const resSeg = el('div','segmented');
+      [[1,'1× ('+C.state.frame.w+'×'+C.state.frame.h+')'],[2,'2×'],[3,'3×']].forEach(([m,lbl]) => {
+        const b = el('button','seg-btn'+(opts.resMult===m?' active':''), lbl);
+        b.addEventListener('click', () => { opts.resMult=m; [...resSeg.children].forEach(c=>c.classList.remove('active')); b.classList.add('active'); });
+        resSeg.appendChild(b);
+      });
+      panel.appendChild(resSeg);
+
+      // fps
+      panel.appendChild(el('label','modal-label','Frame rate'));
+      const fpsSeg = el('div','segmented');
+      [24,30,60].forEach(f => {
+        const b = el('button','seg-btn'+(opts.fps===f?' active':''), f+' fps');
+        b.addEventListener('click', () => { opts.fps=f; [...fpsSeg.children].forEach(c=>c.classList.remove('active')); b.classList.add('active'); });
+        fpsSeg.appendChild(b);
+      });
+      panel.appendChild(fpsSeg);
+
+      // duration
+      const durLabel = el('label','modal-label','Duration: ' + opts.duration.toFixed(1) + 's');
+      panel.appendChild(durLabel);
+      const dur = document.createElement('input');
+      dur.type='range'; dur.min=0.5; dur.max=Math.max(30, C.state.duration); dur.step=0.5; dur.value=opts.duration;
+      dur.addEventListener('input', () => { opts.duration=parseFloat(dur.value); durLabel.textContent='Duration: '+opts.duration.toFixed(1)+'s'; });
+      panel.appendChild(dur);
+
+      const row = el('div','modal-actions');
+      const cancel = el('button','btn','Cancel');
+      cancel.addEventListener('click', close);
+      const go = el('button','btn btn-primary','Export');
+      go.addEventListener('click', () => { close(); runExport(opts); });
+      row.appendChild(cancel); row.appendChild(go);
+      panel.appendChild(row);
+    });
+  });
+
+  /* ================= resizable right panel ================= */
+
+  (function(){
+    const handle = $('panelResize');
+    if(!handle) return;
+    const root = document.documentElement;
+    // restore any saved width
+    try{
+      const saved = localStorage.getItem('forge:panelw');
+      if(saved) root.style.setProperty('--panel-w', saved);
+    } catch(e){}
+    let dragging = false;
+    handle.addEventListener('pointerdown', e => {
+      dragging = true; handle.setPointerCapture(e.pointerId);
+      document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    });
+    handle.addEventListener('pointermove', e => {
+      if(!dragging) return;
+      // panel is on the right, so its width grows as the pointer moves left
+      const w = Math.max(220, Math.min(460, window.innerWidth - e.clientX));
+      root.style.setProperty('--panel-w', w + 'px');
+    });
+    function end(e){
+      if(!dragging) return;
+      dragging = false;
+      document.body.style.cursor = '';
+      try{ localStorage.setItem('forge:panelw', getComputedStyle(root).getPropertyValue('--panel-w').trim()); }catch(_){}
+      if(fitMode) applyZoom();
+      try{ handle.releasePointerCapture(e.pointerId); }catch(_){}
+    }
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+  })();
 
   /* ================= keyboard ================= */
 
@@ -803,6 +1036,7 @@
     if(what === 'transport'){ $('playBtn').textContent = C.isPlaying() ? '❚❚' : '▶'; return; }
     if(what === 'frame'){ applyZoom(); return; }
     if(what === 'keys'){ buildTimeline(); return; }
+    if(what === 'loaded'){ buildLayers(); buildInspector(); buildTimeline(); applyZoom(); return; }
     buildLayers(); buildInspector(); buildTimeline(); drawOverlay();
   });
 
@@ -819,13 +1053,20 @@
     toast('This browser has no WebGL — effects are unavailable.');
   }
   C.attachView(stageCanvas);
-  const restored = C.load();
   C.start();
 
-  if(!C.state.layers.length){
-    C.addSolidLayer();
-    C.select('composition');
-  }
+  // Fresh session by default: start clean and OFFER to restore, rather than silently
+  // reloading the previous session's work.
+  C.addSolidLayer();
+  C.select('composition');
   buildLayers(); buildInspector(); buildTimeline(); applyZoom();
-  if(restored) toast('Restored your last composition (images need re-adding).');
+
+  if(C.hasAutosave()){
+    toast('You have an unsaved session from last time.', {label:'Restore', onClick: () => {
+      C.restoreAutosave().then(ok => {
+        if(ok){ buildLayers(); buildInspector(); buildTimeline(); applyZoom(); toast('Session restored.'); }
+        else toast('Could not restore that session.');
+      });
+    }});
+  }
 })();
