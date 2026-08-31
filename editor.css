@@ -2,7 +2,7 @@
    Layout regions: toolbar (top) / scene (left) / canvas (centre) / inspector (right) / timeline (bottom).
 
    Color system: dark is the default surface; [data-theme="light"] on <html> overrides the
-   same semantic tokens for a light one. Everything below reads --bg-*/--text-*/--accent*
+   same semantic tokens for a light one. Everything below reads bg/text/accent color tokens
    rather than a literal color, so the two themes are two variable blocks, not two files.
    Figma is the reference point for the light theme specifically — clean neutrals, a single
    confident blue accent, high density without visual noise — reimplemented in Forge's own
