@@ -107,6 +107,9 @@ ui.js           panel logic, canvas interaction, timeline
 Working prototype, actively evolving.
 
 - **Projects save into the browser or as files.** Use Save to keep a named project in this browser (images embedded, so they come back intact), Open to browse and reload saved projects, or Download .forge to get a portable file you can move between machines. A fresh session always starts clean — if you have unsaved work from last time, Forge offers to restore it rather than loading it silently.
+- **Dark and light themes.** Follows your OS preference by default; the ◐ button in the toolbar overrides it and remembers your choice. The accent color throughout the editor is blue rather than orange — one consistent interactive color, in the spirit of tools like Figma, though the palette itself is Forge's own.
+- **Timeline scrubbing.** Press and drag across the ruler or any keyframe track to sweep the playhead; it pauses playback while you drag and resumes where you left off.
+- **The landing page background is Forge's own Gradient effect, running live** — the same math as the in-editor effect, reimplemented standalone so the landing page doesn't have to load the editor engine just to paint its background. Falls back to a static image if WebGL isn't available.
 - **No object tracking yet.** Attaching an effect to a tracked subject in the frame is a real computer-vision feature, not a toggle, and it hasn't been built.
 - **The effects pass is real-time, not offline-rendered.** A heavy stack at 3× export resolution may drop frames rather than corrupt the file. Per-effect downsampling is the fix.
 

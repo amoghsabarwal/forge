@@ -11,10 +11,17 @@ body{ font-family:var(--sans); color:var(--text-0); }
 
 .landing{
   height:100vh; width:100vw; display:flex; flex-direction:column; align-items:center; justify-content:center;
-  text-align:center; padding:24px; position:relative;
-  background-image:url('hero.jpg');
+  text-align:center; padding:24px; position:relative; overflow:hidden;
+  background-image:url('hero.jpg'); /* fallback for browsers with no WebGL — #bgCanvas paints over this */
   background-size:cover; background-position:center; background-repeat:no-repeat;
 }
+
+#bgCanvas{
+  position:absolute; inset:0; width:100%; height:100%; z-index:0;
+  display:block;
+}
+
+.landing > *:not(#bgCanvas){ position:relative; z-index:1; }
 
 /* the real brand wordmark (wordmark.svg), used as a CSS mask so its color is controllable
    and the file itself stays a single cacheable static asset rather than duplicated inline

@@ -1,14 +1,22 @@
 /* editor.css — Forge composition editor.
-   Layout regions: toolbar (top) / scene (left) / canvas (centre) / inspector (right) / timeline (bottom). */
+   Layout regions: toolbar (top) / scene (left) / canvas (centre) / inspector (right) / timeline (bottom).
+
+   Color system: dark is the default surface; [data-theme="light"] on <html> overrides the
+   same semantic tokens for a light one. Everything below reads --bg-*/--text-*/--accent*
+   rather than a literal color, so the two themes are two variable blocks, not two files.
+   Figma is the reference point for the light theme specifically — clean neutrals, a single
+   confident blue accent, high density without visual noise — reimplemented in Forge's own
+   values, not their literal palette. */
 
 :root{
-  /* Shifted from the old warm near-black (tied to the retired orange-ember identity) to a
-     cooler neutral that reads as the same family as the brand gradient's blues without
-     turning the working panels themselves into a color surface. */
   --bg-0:#0a0b0f; --bg-1:#121319; --bg-2:#1a1b22; --bg-3:#23242c;
   --border:#282a34; --border-hi:#383a46;
   --text-0:#f5f4f2; --text-1:#b4b3ba; --text-2:#75747d;
-  --accent:#ff5a1f; --accent-dim:#5c2410;
+  /* Accent moved off the old orange-ember identity onto brand blue — a single confident
+     interactive color, the same role Figma's blue plays: everything clickable/active/
+     selected reads through this one hue, nothing else competes with it for attention. */
+  --accent:#3b82f6; --accent-dim:#1e3a6e; --accent-rgb:59,130,246;
+  --shadow-strength:0.4;
   --mono:'Satoshi', ui-monospace, monospace;
   --sans:'Satoshi', system-ui, sans-serif;
   --panel-w:264px;
@@ -19,6 +27,17 @@
      still needs a stable, low-chroma base to actually read sliders and layer names against;
      this is "kinda similar," not a repaint of every panel. */
   --brand-blue:#1d6fe0; --brand-pink:#e6237e; --brand-orange:#ff8a3d; --brand-cyan:#2fd4c0;
+}
+
+/* Light theme — same semantic tokens, Figma-inspired: near-white neutrals, dark ink text,
+   the same blue accent (blue reads correctly on both light and dark, so it doesn't need to
+   change per-theme). Applied via a data attribute set on <html>, see theme.js at the bottom. */
+[data-theme="light"]{
+  --bg-0:#f6f7f9; --bg-1:#ffffff; --bg-2:#eef0f3; --bg-3:#e4e7eb;
+  --border:#dfe2e6; --border-hi:#c8ccd2;
+  --text-0:#1c1e21; --text-1:#5c6066; --text-2:#8a8f96;
+  --accent:#2563eb; --accent-dim:#dbe6fd; --accent-rgb:37,99,235;
+  --shadow-strength:0.08;
 }
 
 *{ box-sizing:border-box; }
@@ -131,7 +150,7 @@ body{ background:var(--bg-0); color:var(--text-0); font-family:var(--sans); over
 .sel-box{ position:absolute; border:1px solid var(--accent); pointer-events:none; }
 .sel-box.locked{ border-style:dashed; opacity:0.6; }
 .sel-handle{ position:absolute; width:9px; height:9px; margin:-5px 0 0 -5px;
-  background:var(--accent); border:1px solid #1a0800; border-radius:2px; pointer-events:auto; }
+  background:var(--accent); border:1px solid var(--bg-0); border-radius:2px; pointer-events:auto; }
 .sel-nw{ cursor:nwse-resize; } .sel-se{ cursor:nwse-resize; }
 .sel-ne{ cursor:nesw-resize; } .sel-sw{ cursor:nesw-resize; }
 .sel-rotate{ position:absolute; left:50%; top:-24px; width:11px; height:11px; margin-left:-6px;
@@ -154,7 +173,7 @@ body{ background:var(--bg-0); color:var(--text-0); font-family:var(--sans); over
 input[type="range"]{ -webkit-appearance:none; width:100%; height:14px; background:transparent; margin:0; }
 input[type="range"]::-webkit-slider-runnable-track{ height:3px; background:var(--bg-3); border-radius:2px; }
 input[type="range"]::-webkit-slider-thumb{ -webkit-appearance:none; width:12px; height:12px; margin-top:-4.5px;
-  border-radius:50%; background:var(--accent); cursor:pointer; box-shadow:0 0 0 3px rgba(255,90,31,0.15); }
+  border-radius:50%; background:var(--accent); cursor:pointer; box-shadow:0 0 0 3px rgba(var(--accent-rgb),0.15); }
 input[type="range"]::-moz-range-track{ height:3px; background:var(--bg-3); border-radius:2px; }
 input[type="range"]::-moz-range-thumb{ width:12px; height:12px; border:none; border-radius:50%; background:var(--accent); cursor:pointer; }
 
@@ -163,7 +182,7 @@ input[type="range"]::-moz-range-thumb{ width:12px; height:12px; border:none; bor
   border:1px solid var(--border); background:var(--bg-3); color:var(--text-1); cursor:pointer;
   transition:border-color .15s, color .15s, background .15s; }
 .seg-btn:hover{ color:var(--text-0); }
-.seg-btn.active{ border-color:var(--accent); color:var(--accent); background:rgba(255,90,31,0.08); }
+.seg-btn.active{ border-color:var(--accent); color:var(--accent); background:rgba(var(--accent-rgb),0.08); }
 
 .switch{ position:relative; width:30px; height:17px; flex-shrink:0; }
 .switch input{ opacity:0; width:100%; height:100%; margin:0; position:absolute; cursor:pointer; z-index:1; }
@@ -185,14 +204,14 @@ input[type="range"]::-moz-range-thumb{ width:12px; height:12px; border:none; bor
   background:transparent; border:1px solid var(--border); border-radius:6px; padding:2px 5px;
   cursor:pointer; transition:color .15s, border-color .15s, background .15s; }
 .key-btn:hover, .anim-btn:hover, .audio-btn:hover{ color:var(--text-0); border-color:var(--border-hi); }
-.key-btn.on{ color:var(--accent); border-color:var(--accent); background:rgba(255,90,31,0.10); }
-.anim-btn.on{ color:var(--accent); border-color:var(--accent); background:rgba(255,90,31,0.10); }
+.key-btn.on{ color:var(--accent); border-color:var(--accent); background:rgba(var(--accent-rgb),0.10); }
+.anim-btn.on{ color:var(--accent); border-color:var(--accent); background:rgba(var(--accent-rgb),0.10); }
 .audio-btn.on{ color:var(--brand-cyan); border-color:var(--brand-cyan); background:rgba(47,212,192,0.10); }
 .audio-btn.dim{ opacity:0.4; cursor:not-allowed; }
 .audio-btn.dim:hover{ color:var(--text-2); border-color:var(--border); }
 
 .anim-box{ margin:8px 0 10px; padding:8px 9px; border-left:2px solid var(--accent-dim);
-  background:rgba(255,90,31,0.035); border-radius:0 5px 5px 0; }
+  background:rgba(var(--accent-rgb),0.035); border-radius:0 5px 5px 0; }
 .audio-box{ margin:8px 0 10px; padding:8px 9px; border-left:2px solid var(--brand-cyan);
   background:rgba(47,212,192,0.05); border-radius:0 5px 5px 0; }
 .anim-select{ margin-bottom:8px; }
@@ -230,7 +249,7 @@ input[type="range"]::-moz-range-thumb{ width:12px; height:12px; border:none; bor
 .track-lane{ flex:1; position:relative; height:100%; cursor:pointer; }
 .track-lane:hover{ background:rgba(255,255,255,0.014); }
 .key-dot{ position:absolute; top:50%; width:9px; height:9px; margin:-5px 0 0 -5px; padding:0;
-  background:var(--accent); border:1px solid #1a0800; border-radius:2px;
+  background:var(--accent); border:1px solid var(--bg-0); border-radius:2px;
   transform:rotate(45deg); cursor:pointer; }
 .key-dot:hover{ background:#ff7038; }
 .playhead{ position:absolute; top:0; bottom:0; width:1px; background:var(--accent);

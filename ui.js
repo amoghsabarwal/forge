@@ -748,10 +748,7 @@
         });
         lane.appendChild(dot);
       });
-      lane.addEventListener('click', e => {
-        const r = lane.getBoundingClientRect();
-        C.setTime((e.clientX-r.left)/r.width*dur);
-      });
+      wireScrub(lane);
       row.appendChild(lane);
       timelineEl.appendChild(row);
     });
@@ -771,10 +768,33 @@
     timeLabel.textContent = C.currentTime().toFixed(2) + ' / ' + dur.toFixed(2) + 's';
   }
 
-  rulerEl.addEventListener('click', e => {
-    const r = rulerEl.getBoundingClientRect();
-    C.setTime((e.clientX-r.left)/r.width*C.state.duration);
-  });
+  // Scrubbing: press-and-drag across the ruler or any track lane to sweep the playhead,
+  // not just click-to-jump. Dragging pauses playback so it doesn't fight the transport.
+  function wireScrub(elToScrub, widthEl){
+    let dragging = false, wasPlaying = false;
+    const seek = e => {
+      const r = (widthEl || elToScrub).getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      C.setTime(pct * C.state.duration);
+    };
+    elToScrub.addEventListener('pointerdown', e => {
+      dragging = true;
+      wasPlaying = C.isPlaying();
+      if(wasPlaying) C.pause();
+      elToScrub.setPointerCapture(e.pointerId);
+      seek(e);
+    });
+    elToScrub.addEventListener('pointermove', e => { if(dragging) seek(e); });
+    const end = e => {
+      if(!dragging) return;
+      dragging = false;
+      try{ elToScrub.releasePointerCapture(e.pointerId); }catch(_){}
+      if(wasPlaying) C.play();
+    };
+    elToScrub.addEventListener('pointerup', end);
+    elToScrub.addEventListener('pointercancel', end);
+  }
+  wireScrub(rulerEl);
 
   /* ================= toolbar ================= */
 
@@ -833,6 +853,24 @@
     audioBtn.classList.toggle('active', !!on);
     audioBtn.textContent = on ? '♪ ' + (ForgeAudio.name.length > 10 ? ForgeAudio.name.slice(0,10)+'…' : ForgeAudio.name) : '♪ Audio';
   }
+
+  // ---- theme toggle (dark/light) ----
+  // The inline script in <head> already applied the right theme before first paint (saved
+  // choice, or OS preference as a fallback). This just handles the manual override + save.
+  const themeBtn = $('themeBtn');
+  function currentTheme(){ return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark'; }
+  function applyTheme(t){
+    if(t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+    else document.documentElement.removeAttribute('data-theme');
+    themeBtn.textContent = t === 'light' ? '◑' : '◐';
+    themeBtn.title = t === 'light' ? 'Switch to dark theme' : 'Switch to light theme';
+  }
+  applyTheme(currentTheme()); // sync the button glyph to whatever <head> already decided
+  themeBtn.addEventListener('click', () => {
+    const next = currentTheme() === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+    try{ localStorage.setItem('forge:theme', next); }catch(e){}
+  });
 
   function loadImageFile(file){
     const url = URL.createObjectURL(file);
