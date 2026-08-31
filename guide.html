@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Guide — Forge</title>
+<meta name="description" content="How to use Forge: layers, effects, animation, and export.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://api.fontshare.com">
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="guide.css">
+</head>
+<body>
+  <header class="gtop">
+    <a class="gmark" href="index.html" title="Back to home"><span class="wordmark"></span></a>
+    <nav class="gnav">
+      <a href="editor.html" class="gnav-cta">Open Editor →</a>
+    </nav>
+  </header>
+
+  <main class="gwrap">
+    <aside class="gtoc" id="gtoc">
+      <span class="gtoc-label">On this page</span>
+      <a href="#start">Getting started</a>
+      <a href="#layers">Layers</a>
+      <a href="#effects">Effects</a>
+      <a href="#animate">Animating a parameter</a>
+      <a href="#audio">Reacting to audio</a>
+      <a href="#projects">Saving your work</a>
+      <a href="#export">Exporting</a>
+      <a href="#shortcuts">Shortcuts</a>
+    </aside>
+
+    <article class="gcontent">
+      <p class="geyebrow">Guide</p>
+      <h1>Making something move in Forge</h1>
+      <p class="glede">Forge is a layer-based editor for building animated visuals in the browser — no install, no render queue. This page covers the basics: enough to go from a blank canvas to an exported clip in a few minutes.</p>
+
+      <section id="start">
+        <h2>Getting started</h2>
+        <p>Open the <a href="editor.html">editor</a> and you'll land on a single Background layer. Everything in Forge is built by stacking <strong>layers</strong> — images, video, text, or solid colors — and then applying <strong>effects</strong> to any of them.</p>
+        <p>Nothing happens automatically. A new layer arrives with no effects and inherits nothing from the layer above it. What you see is only what you've deliberately added — that's a deliberate rule, not a limitation, so you always know exactly why something looks the way it does.</p>
+      </section>
+
+      <section id="layers">
+        <h2>Layers</h2>
+        <p>Use the toolbar's <strong>+ Image</strong>, <strong>+ Video</strong>, <strong>+ Text</strong>, and <strong>+ Solid</strong> buttons to add layers. They stack top to bottom in the left panel, the same as most compositing tools — layers higher in the list draw on top.</p>
+        <p>Click a layer to select it. The right panel becomes that layer's inspector: position, scale, rotation, opacity, blend mode, and its own effect stack. Drag a selected layer directly on the canvas to move it, or use the handles to scale and rotate.</p>
+        <p>Each layer also has a lock and a visibility toggle in the layer list, for working on one part of a composition without the rest getting in the way.</p>
+      </section>
+
+      <section id="effects">
+        <h2>Effects</h2>
+        <p>With a layer selected, open the inspector's effect section and pick something from the add-effect menu. Effects are grouped by what they do — Light, Texture, Structure, Distortion, Generative — and each one lands on the layer as its own card with its own parameters.</p>
+        <p>Stack as many as you like; they apply in order, top to bottom, and each is non-destructive — turn any of them off, reorder them, or delete one without touching the rest. There's also a <strong>composition-wide</strong> effect stack (select "Composition" instead of a layer) for anything that should apply to the whole frame at once, after every layer is composited together.</p>
+        <p>Built one look you like? Use <strong>Copy stack</strong> at the bottom of a layer's effects, then <strong>Paste</strong> on another layer to reuse it instantly.</p>
+      </section>
+
+      <section id="animate">
+        <h2>Animating a parameter</h2>
+        <p>Every slider in Forge can move on its own — you don't need to hand-animate anything. Next to each parameter are two small buttons:</p>
+        <ul>
+          <li><strong>◆</strong> drops a keyframe at the playhead. Set different values at different points in time and Forge eases between them.</li>
+          <li><strong>∿</strong> attaches an oscillator — the value swings continuously on a wave (sine, triangle, square, and others), with its own speed and amount. This is the fastest way to make something feel alive without touching the timeline at all.</li>
+        </ul>
+        <p>Both can be used on the same parameter at once — a keyframed path with an oscillator riding on top of it.</p>
+      </section>
+
+      <section id="audio">
+        <h2>Reacting to audio</h2>
+        <p>Click <strong>♪ Audio</strong> in the toolbar and load a track. Once it's loaded, every parameter gets a third button — <strong>♪</strong> — next to the keyframe and oscillator ones. Turn it on, pick a band (bass, mids, highs, overall level, or detected beats), and that parameter now moves with the music.</p>
+        <p>Worth knowing: this drives what you see while you work, but the exported video is currently silent — add your track back in afterward if you're posting with sound. And because audio files are too large to save, you'll reload the track each time you reopen a project.</p>
+      </section>
+
+      <section id="projects">
+        <h2>Saving your work</h2>
+        <p>Forge doesn't restore your last session automatically — every fresh visit starts clean, with the option to restore an unsaved session if one exists. To actually keep something, use <strong>Save</strong> in the toolbar to store a named project in this browser, or <strong>Download .forge</strong> for a portable file you can move between machines. <strong>Open</strong> shows every project you've saved, with a thumbnail, ready to reload.</p>
+        <p>Images are embedded directly in a saved project, so they come back exactly as you left them. Video and audio aren't — those files are too large to store — so you'll re-add them after reopening a project that used either.</p>
+      </section>
+
+      <section id="export">
+        <h2>Exporting</h2>
+        <p>Click <strong>Export</strong> to open the export dialog: choose MP4 or WebM, a resolution multiplier up to 3×, a frame rate, and a duration. Forge renders frame by frame rather than trusting real-time playback, so the exported file stays accurate even on a heavy effect stack.</p>
+        <p>One honesty note: true MP4 depends on what your browser supports. Where it isn't available, Forge falls back to WebM automatically and tells you it did — rather than handing you a WebM quietly renamed to .mp4.</p>
+      </section>
+
+      <section id="shortcuts">
+        <h2>Shortcuts</h2>
+        <table class="gtable">
+          <tr><td><kbd>Space</kbd></td><td>Play / pause</td></tr>
+          <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>Z</kbd></td><td>Undo</td></tr>
+          <tr><td><kbd>Shift</kbd> + <kbd>Cmd/Ctrl</kbd> + <kbd>Z</kbd></td><td>Redo</td></tr>
+          <tr><td><kbd>Cmd/Ctrl</kbd> + <kbd>D</kbd></td><td>Duplicate selected layer</td></tr>
+          <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove selected layer</td></tr>
+          <tr><td><kbd>H</kbd></td><td>Toggle visibility</td></tr>
+          <tr><td><kbd>L</kbd></td><td>Toggle lock</td></tr>
+          <tr><td><kbd>F</kbd></td><td>Fit canvas to screen</td></tr>
+          <tr><td><kbd>Arrow keys</kbd></td><td>Nudge selected layer (hold Shift for 10px)</td></tr>
+        </table>
+      </section>
+
+      <div class="gcta">
+        <a class="btn btn-primary" href="editor.html">Open Editor →</a>
+      </div>
+    </article>
+  </main>
+</body>
+</html>

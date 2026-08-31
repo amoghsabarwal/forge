@@ -1211,5 +1211,14 @@
         else toast('Could not restore that session.');
       });
     }});
+  } else if(!localStorage.getItem('forge:seenIntro')){
+    // first-ever visit to the editor (no autosave means nothing has been built here yet) —
+    // point to the guide once, then never again.
+    try{ localStorage.setItem('forge:seenIntro', '1'); } catch(e){}
+    setTimeout(() => {
+      toast('New here? The guide covers the basics in a couple minutes.', {label:'Open Guide', onClick: () => {
+        window.open('guide.html', '_blank');
+      }});
+    }, 900);
   }
 })();
