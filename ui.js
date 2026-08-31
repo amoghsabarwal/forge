@@ -1131,10 +1131,12 @@
     const handle = $('panelResize');
     if(!handle) return;
     const root = document.documentElement;
-    // restore any saved width
+    // restore any saved width, clamped so a stale/corrupted value can never collapse the panel
     try{
       const saved = localStorage.getItem('forge:panelw');
-      if(saved) root.style.setProperty('--panel-w', saved);
+      const n = saved ? parseInt(saved, 10) : NaN;
+      if(!isNaN(n) && n >= 220 && n <= 460) root.style.setProperty('--panel-w', n + 'px');
+      else if(saved) localStorage.removeItem('forge:panelw'); // drop bad saved state instead of applying it
     } catch(e){}
     let dragging = false;
     handle.addEventListener('pointerdown', e => {

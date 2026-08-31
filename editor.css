@@ -20,6 +20,7 @@
   --mono:'Satoshi', ui-monospace, monospace;
   --sans:'Satoshi', system-ui, sans-serif;
   --panel-w:264px;
+  --panel-left-w:220px;
   --timeline-h:186px;
   --track-name-w:150px;
   /* The brand gradient itself — same family used on the landing page, applied here only to
@@ -45,7 +46,7 @@ html,body{ height:100%; margin:0; }
 body{ background:var(--bg-0); color:var(--text-0); font-family:var(--sans); overflow:hidden; }
 
 #app{ height:100vh; display:flex; flex-direction:column; }
-.body{ flex:1; min-height:0; display:grid; grid-template-columns:var(--panel-w) 1fr var(--panel-w); grid-template-rows:minmax(0,1fr); }
+.body{ flex:1; min-height:0; display:grid; grid-template-columns:var(--panel-left-w) 1fr var(--panel-w); grid-template-rows:minmax(0,1fr); }
 
 /* ---- toolbar ---- */
 .toolbar{ display:flex; align-items:center; gap:16px; padding:9px 16px; flex-shrink:0;
@@ -150,7 +151,7 @@ body{ background:var(--bg-0); color:var(--text-0); font-family:var(--sans); over
 .sel-box{ position:absolute; border:1px solid var(--accent); pointer-events:none; }
 .sel-box.locked{ border-style:dashed; opacity:0.6; }
 .sel-handle{ position:absolute; width:9px; height:9px; margin:-5px 0 0 -5px;
-  background:var(--accent); border:1px solid var(--bg-0); border-radius:2px; pointer-events:auto; }
+  background:var(--accent); border:1.5px solid var(--bg-1); border-radius:2px; pointer-events:auto; }
 .sel-nw{ cursor:nwse-resize; } .sel-se{ cursor:nwse-resize; }
 .sel-ne{ cursor:nesw-resize; } .sel-sw{ cursor:nesw-resize; }
 .sel-rotate{ position:absolute; left:50%; top:-24px; width:11px; height:11px; margin-left:-6px;
@@ -249,7 +250,7 @@ input[type="range"]::-moz-range-thumb{ width:12px; height:12px; border:none; bor
 .track-lane{ flex:1; position:relative; height:100%; cursor:pointer; }
 .track-lane:hover{ background:rgba(255,255,255,0.014); }
 .key-dot{ position:absolute; top:50%; width:9px; height:9px; margin:-5px 0 0 -5px; padding:0;
-  background:var(--accent); border:1px solid var(--bg-0); border-radius:2px;
+  background:var(--accent); border:1.5px solid var(--bg-1); border-radius:2px;
   transform:rotate(45deg); cursor:pointer; }
 .key-dot:hover{ background:#ff7038; }
 .playhead{ position:absolute; top:0; bottom:0; width:1px; background:var(--accent);
@@ -278,7 +279,7 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 }
 
 @media (max-width:1100px){
-  :root{ --panel-w:220px; }
+  :root{ --panel-w:220px; --panel-left-w:180px; }
 }
 
 /* ---- modals (File / Export dialogs) ---- */
