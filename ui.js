@@ -283,6 +283,17 @@
       ab.addEventListener('click', () => { opts.onAnim(); buildInspector(); });
       right.appendChild(ab);
     }
+    if(opts.onAudio){
+      const audioReady = window.ForgeAudio && ForgeAudio.loaded;
+      const ub = el('button','audio-btn'+(opts.audioOn && opts.audioOn() ? ' on':''), '♪');
+      ub.title = audioReady ? 'React to the audio track' : 'Load an audio track first (♪ Audio in the toolbar)';
+      if(!audioReady) ub.classList.add('dim');
+      ub.addEventListener('click', () => {
+        if(!audioReady){ toast('Load an audio track first — ♪ Audio in the toolbar.'); return; }
+        opts.onAudio(); buildInspector();
+      });
+      right.appendChild(ub);
+    }
     lab.appendChild(right);
     const input = document.createElement('input');
     input.type = 'range'; input.min = opts.min; input.max = opts.max; input.step = opts.step;
@@ -292,6 +303,8 @@
       val.textContent = fmt(opts.get(), opts.step) + (opts.unit||'');
       if(opts.after) opts.after();
     });
+    // commit one history entry when the drag ends, not per-pixel during it
+    input.addEventListener('change', () => { C.commit(); });
     row.appendChild(lab); row.appendChild(input);
     parent.appendChild(row);
     liveValueRefreshers.push(() => {
@@ -336,27 +349,25 @@
         b.addEventListener('click', e => { e.stopPropagation(); fn(); });
         tools.appendChild(b);
       }
-      tool('↑','Move up', () => { [stack[idx-1],stack[idx]]=[stack[idx],stack[idx-1]]; buildInspector(); }, idx===0);
-      tool('↓','Move down', () => { [stack[idx+1],stack[idx]]=[stack[idx],stack[idx+1]]; buildInspector(); }, idx===stack.length-1);
-      tool('⟲','Reset', () => { FX.resetInstance(inst); buildInspector(); });
+      tool('↑','Move up', () => { [stack[idx-1],stack[idx]]=[stack[idx],stack[idx-1]]; buildInspector(); C.commit(); }, idx===0);
+      tool('↓','Move down', () => { [stack[idx+1],stack[idx]]=[stack[idx],stack[idx+1]]; buildInspector(); C.commit(); }, idx===stack.length-1);
+      tool('⟲','Reset', () => { FX.resetInstance(inst); buildInspector(); C.commit(); });
       tool('⧉','Duplicate', () => {
         const copy = JSON.parse(JSON.stringify(inst));
         copy.uid = FX.makeInstance(inst.typeId).uid;
-        stack.splice(idx+1,0,copy); buildInspector(); buildLayers();
+        stack.splice(idx+1,0,copy); buildInspector(); buildLayers(); C.commit();
       });
       tool('×','Remove', () => {
-        const [rm] = stack.splice(idx,1);
-        buildInspector(); buildLayers(); buildTimeline();
-        toast(type.label + ' removed.', {label:'Undo', onClick: () => {
-          stack.splice(Math.min(idx,stack.length),0,rm); buildInspector(); buildLayers();
-        }});
+        stack.splice(idx,1);
+        buildInspector(); buildLayers(); buildTimeline(); C.commit();
+        toast(type.label + ' removed.', {label:'Undo', onClick: () => C.undo()});
       });
       head.appendChild(tools);
 
       const sw = el('label','switch');
       const cb = document.createElement('input');
       cb.type='checkbox'; cb.checked = inst.enabled;
-      cb.addEventListener('change', () => { inst.enabled = cb.checked; card.classList.toggle('on', inst.enabled); body.style.display = inst.enabled?'block':'none'; buildLayers(); });
+      cb.addEventListener('change', () => { inst.enabled = cb.checked; card.classList.toggle('on', inst.enabled); body.style.display = inst.enabled?'block':'none'; buildLayers(); C.commit(); });
       sw.appendChild(cb); sw.appendChild(el('span','track')); sw.appendChild(el('span','thumb'));
       head.appendChild(sw);
       card.appendChild(head);
@@ -367,6 +378,7 @@
       type.params.forEach(spec => {
         const path = C.fxPath(inst, spec.key);
         const anim = inst.anim[spec.key] || (inst.anim[spec.key] = {on:false, amount:0.4, speed:1, wave:'sine', phase:0});
+        const audio = (inst.audio && inst.audio[spec.key]) || ((inst.audio = inst.audio || {})[spec.key] = {on:false, amount:0.5, band:'bass'});
         slider(body, {
           label: spec.key, min: spec.min, max: spec.max, step: spec.step,
           unit: spec.degrees ? '°' : '',
@@ -380,7 +392,9 @@
             if(at) C.removeKey(owner, path, t); else C.setKey(owner, path, t, inst.params[spec.key]);
           } : null,
           animOn: () => anim.on,
-          onAnim: () => { anim.on = !anim.on; }
+          onAnim: () => { anim.on = !anim.on; },
+          audioOn: () => audio.on,
+          onAudio: () => { audio.on = !audio.on; if(audio.on) C.commit(); }
         });
         if(anim.on){
           const box = el('div','anim-box');
@@ -398,6 +412,21 @@
             slider(box, {label:k, min:mn, max:mx, step:st, get:()=>anim[k], set:v=>{anim[k]=v;}});
           });
           body.appendChild(box);
+        }
+        if(audio.on){
+          const abox = el('div','audio-box');
+          const bandSel = document.createElement('select');
+          bandSel.className = 'select-input anim-select';
+          ForgeAudio.BANDS.forEach(bd => {
+            const o = document.createElement('option');
+            o.value = bd.id; o.textContent = bd.label;
+            if(bd.id === audio.band) o.selected = true;
+            bandSel.appendChild(o);
+          });
+          bandSel.addEventListener('change', () => { audio.band = bandSel.value; });
+          abox.appendChild(bandSel);
+          slider(abox, {label:'amount', min:-1, max:1, step:0.01, get:()=>audio.amount, set:v=>{audio.amount=v;}});
+          body.appendChild(abox);
         }
       });
 
@@ -468,10 +497,30 @@
       if(!sel.value) return;
       const inst = FX.makeInstance(sel.value);
       if(inst) stack.push(inst);
-      buildInspector(); buildLayers();
+      buildInspector(); buildLayers(); C.commit();
     });
     addWrap.appendChild(sel);
     container.appendChild(addWrap);
+
+    // copy / paste the whole stack — build one look, reuse it on another layer
+    const cpRow = el('div','fx-clipboard-row');
+    const copyBtn = el('button','icon-btn','Copy stack');
+    copyBtn.disabled = !stack.length;
+    copyBtn.addEventListener('click', () => {
+      const n = C.copyEffects(stack);
+      toast(n ? n + ' effect' + (n>1?'s':'') + ' copied.' : 'Nothing to copy.');
+    });
+    cpRow.appendChild(copyBtn);
+    if(C.hasCopiedEffects()){
+      const pasteBtn = el('button','icon-btn','Paste');
+      pasteBtn.addEventListener('click', () => {
+        const n = C.pasteEffects(stack, 'append');
+        buildInspector(); buildLayers();
+        toast(n + ' effect' + (n>1?'s':'') + ' pasted.');
+      });
+      cpRow.appendChild(pasteBtn);
+    }
+    container.appendChild(cpRow);
   }
 
   function buildInspector(){
@@ -740,8 +789,50 @@
     [...e.target.files].forEach(file => loadAssetFile(file));
     videoInput.value = '';
   });
-  $('addTextBtn').addEventListener('click', () => C.addTextLayer());
-  $('addSolidBtn').addEventListener('click', () => C.addSolidLayer());
+  $('addTextBtn').addEventListener('click', () => { C.addTextLayer(); C.commit(); });
+  $('addSolidBtn').addEventListener('click', () => { C.addSolidLayer(); C.commit(); });
+
+  // ---- undo / redo toolbar buttons ----
+  $('undoBtn').addEventListener('click', () => { if(C.undo()) toast('Undo'); });
+  $('redoBtn').addEventListener('click', () => { if(C.redo()) toast('Redo'); });
+
+  // ---- audio track ----
+  const audioInput = $('audioInput');
+  const audioBtn = $('audioBtn');
+  audioBtn.addEventListener('click', () => {
+    if(!window.ForgeAudio || !ForgeAudio.supported){ toast('This browser has no Web Audio support.'); return; }
+    if(ForgeAudio.loaded){
+      // already have a track — offer to swap or remove
+      openModal((panel, close) => {
+        modalHeader(panel, 'Audio track');
+        panel.appendChild(el('p','modal-text','Current track: ' + ForgeAudio.name + '. Effects can react to it via the ♪ button on any parameter.'));
+        const row = el('div','modal-actions');
+        const remove = el('button','btn','Remove track');
+        remove.addEventListener('click', () => { ForgeAudio.clear(); updateAudioBtn(); close(); toast('Audio track removed.'); });
+        const swap = el('button','btn','Replace…');
+        swap.addEventListener('click', () => { close(); audioInput.click(); });
+        const cancel = el('button','btn btn-primary','Done');
+        cancel.addEventListener('click', close);
+        row.appendChild(remove); row.appendChild(swap); row.appendChild(cancel);
+        panel.appendChild(row);
+      });
+    } else {
+      audioInput.click();
+    }
+  });
+  audioInput.addEventListener('change', e => {
+    const file = e.target.files[0];
+    if(file) ForgeAudio.load(file)
+      .then(info => { updateAudioBtn(); toast('Loaded “' + info.name + '” — add a ♪ driver to any parameter.'); })
+      .catch(() => toast('Could not load that audio file.'));
+    audioInput.value = '';
+  });
+  function updateAudioBtn(){
+    if(!audioBtn) return;
+    const on = window.ForgeAudio && ForgeAudio.loaded;
+    audioBtn.classList.toggle('active', !!on);
+    audioBtn.textContent = on ? '♪ ' + (ForgeAudio.name.length > 10 ? ForgeAudio.name.slice(0,10)+'…' : ForgeAudio.name) : '♪ Audio';
+  }
 
   function loadImageFile(file){
     const url = URL.createObjectURL(file);
@@ -749,6 +840,7 @@
     img.onload = () => {
       // a new asset enters clean: its own layer, no effects, nothing inherited
       C.addImageLayer(img, file.name.replace(/\.[^.]+$/,''));
+      C.commit();
     };
     img.onerror = () => toast('Could not load that image.');
     img.src = url;
@@ -760,6 +852,7 @@
     el.muted = true; el.playsInline = true; el.preload = 'auto'; el.loop = false; // Forge drives looping itself
     el.addEventListener('loadedmetadata', () => {
       C.addVideoLayer(el, file.name.replace(/\.[^.]+$/,''));
+      C.commit();
     }, {once:true});
     el.addEventListener('error', () => toast('Could not load that video.'), {once:true});
     el.src = url;
@@ -1036,16 +1129,25 @@
     if(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
     const layer = C.selectedLayer();
 
+    // undo / redo — Cmd/Ctrl+Z, and Shift+Cmd/Ctrl+Z (or Ctrl+Y) to redo
+    if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z'){
+      e.preventDefault();
+      if(e.shiftKey){ if(C.redo()) toast('Redo'); }
+      else { if(C.undo()) toast('Undo'); }
+      return;
+    }
+    if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'y'){ e.preventDefault(); if(C.redo()) toast('Redo'); return; }
+
     if(e.code === 'Space'){ e.preventDefault(); C.togglePlay(); return; }
     if((e.key === 'Delete' || e.key === 'Backspace') && layer){
       e.preventDefault();
       const rm = C.removeLayer(layer.id);
-      if(rm) toast('Layer removed.', {label:'Undo', onClick: () => C.restoreLayer(rm.layer, rm.index)});
+      if(rm){ C.commit(); toast('Layer removed.', {label:'Undo', onClick: () => C.undo()}); }
       return;
     }
-    if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd' && layer){ e.preventDefault(); C.duplicateLayer(layer.id); return; }
-    if(e.key.toLowerCase() === 'h' && layer){ layer.visible = !layer.visible; buildLayers(); return; }
-    if(e.key.toLowerCase() === 'l' && layer){ layer.locked = !layer.locked; buildLayers(); drawOverlay(); return; }
+    if((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd' && layer){ e.preventDefault(); C.duplicateLayer(layer.id); C.commit(); return; }
+    if(e.key.toLowerCase() === 'h' && layer){ layer.visible = !layer.visible; buildLayers(); C.commit(); return; }
+    if(e.key.toLowerCase() === 'l' && layer){ layer.locked = !layer.locked; buildLayers(); drawOverlay(); C.commit(); return; }
     if(e.key.toLowerCase() === 'f'){ fitMode = true; applyZoom(); return; }
     if(layer && !layer.locked && ['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){
       e.preventDefault();
@@ -1055,8 +1157,10 @@
       if(e.key === 'ArrowUp') layer.transform.y -= step;
       if(e.key === 'ArrowDown') layer.transform.y += step;
       drawOverlay(); refreshInspectorValues();
+      clearTimeout(nudgeCommit); nudgeCommit = setTimeout(() => C.commit(), 400); // coalesce rapid nudges
     }
   });
+  let nudgeCommit = null;
 
   /* ================= wiring ================= */
 
@@ -1066,9 +1170,16 @@
     if(what === 'transport'){ $('playBtn').textContent = C.isPlaying() ? '❚❚' : '▶'; return; }
     if(what === 'frame'){ applyZoom(); return; }
     if(what === 'keys'){ buildTimeline(); return; }
-    if(what === 'loaded'){ buildLayers(); buildInspector(); buildTimeline(); applyZoom(); return; }
+    if(what === 'history'){ updateHistoryButtons(); return; }
+    if(what === 'loaded'){ buildLayers(); buildInspector(); buildTimeline(); applyZoom(); updateHistoryButtons(); return; }
     buildLayers(); buildInspector(); buildTimeline(); drawOverlay();
   });
+
+  function updateHistoryButtons(){
+    const u = $('undoBtn'), r = $('redoBtn');
+    if(u) u.disabled = !C.canUndo();
+    if(r) r.disabled = !C.canRedo();
+  }
 
   window.addEventListener('resize', () => { if(fitMode) applyZoom(); updatePlayhead(); });
 
@@ -1089,7 +1200,9 @@
   // reloading the previous session's work.
   C.addSolidLayer();
   C.select('composition');
+  C.seedHistory();
   buildLayers(); buildInspector(); buildTimeline(); applyZoom();
+  updateHistoryButtons();
 
   if(C.hasAutosave()){
     toast('You have an unsaved session from last time.', {label:'Restore', onClick: () => {

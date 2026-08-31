@@ -306,7 +306,10 @@ window.ForgeComp = (function(){
       if(!inst.enabled) return false;
       const type = ForgeFX.typeById(inst.typeId);
       if(type && type.animated) return true; // e.g. grain's film noise, scanline scroll
-      return Object.values(inst.anim || {}).some(a => a.on && a.amount > 0);
+      if(Object.values(inst.anim || {}).some(a => a.on && a.amount > 0)) return true;
+      // an audio-driven param changes with the sound every frame — never cache it as static
+      if(inst.audio && Object.values(inst.audio).some(a => a.on && a.amount !== 0)) return true;
+      return false;
     });
   }
   function layerIsAnimated(layer){
@@ -477,16 +480,19 @@ window.ForgeComp = (function(){
         layer.video.el.currentTime = videoTimeFor(layer, time);
       }
     });
+    if(window.ForgeAudio) ForgeAudio.syncTo(time, playing);
     emit('time');
   }
   function play(){
     playing = true; playStart = performance.now(); playFrom = time;
     syncVideosLive();
+    if(window.ForgeAudio) ForgeAudio.syncTo(time, true);
     emit('transport');
   }
   function pause(){
     playing = false;
     state.layers.forEach(l => { if(l.kind==='video' && l.video && l.video.el) l.video.el.pause(); });
+    if(window.ForgeAudio) ForgeAudio.syncTo(time, false);
     emit('transport');
   }
   function togglePlay(){ playing ? pause() : play(); }
@@ -499,11 +505,14 @@ window.ForgeComp = (function(){
       const elapsed = (now - playStart)/1000 + playFrom;
       time = elapsed % state.duration;
       syncVideosLive();
+      if(window.ForgeAudio) ForgeAudio.syncTo(time, true);
       emit('time-quiet');
     }
     if(!exporting && state.fpsCap > 0){
       if(now - lastDraw < 1000/state.fpsCap - 1.5) return;
     }
+    // refresh audio signals before rendering, so audio-driven params read this frame's levels
+    if(window.ForgeAudio && ForgeAudio.loaded) ForgeAudio.update();
     const t0 = performance.now();
     lastDraw = now;
     const drew = renderFrame(time);
@@ -607,6 +616,93 @@ window.ForgeComp = (function(){
     }
     step();
   }
+
+  /* ---------------- undo / redo ----------------
+   * History snapshots the composition after each committed change. Snapshots use the same
+   * serialized shape as autosave (cheap, no image pixels baked in), but we keep a parallel
+   * map of live image/video objects keyed by a per-layer token, so undo/redo restores those
+   * DOM objects directly instead of re-decoding — fast, and it keeps video elements alive.
+   */
+  const history = { past: [], future: [], live: new Map(), token: 1 };
+  let restoringHistory = false;
+  const HISTORY_LIMIT = 60;
+
+  function snapshot(){
+    // tag each layer with a stable token so we can reattach its live img/video on restore
+    const media = new Map();
+    const data = {
+      frameId: state.frame.id, duration: state.duration, fpsCap: state.fpsCap,
+      exportResMult: state.exportResMult,
+      compFx: JSON.parse(JSON.stringify(state.compFx)),
+      layers: state.layers.map(l => {
+        if(!l._htoken) l._htoken = history.token++;
+        if(l.img || l.video) media.set(l._htoken, {img:l.img, video:l.video});
+        const base = {
+          _htoken:l._htoken, kind:l.kind, name:l.name, visible:l.visible, locked:l.locked, solo:l.solo,
+          transform:JSON.parse(JSON.stringify(l.transform)), blend:l.blend,
+          fx:JSON.parse(JSON.stringify(l.fx)), keys:JSON.parse(JSON.stringify(l.keys)),
+          text:JSON.parse(JSON.stringify(l.text)), solid:JSON.parse(JSON.stringify(l.solid))
+        };
+        return base;
+      })
+    };
+    return {data, media, selection: Object.assign({}, state.selection)};
+  }
+
+  function restoreSnapshot(snap){
+    restoringHistory = true;
+    const s = snap.data;
+    const f = FRAME_PRESETS.find(p => p.id === s.frameId);
+    if(f) state.frame = f;
+    state.duration = s.duration; state.fpsCap = s.fpsCap; state.exportResMult = s.exportResMult;
+    state.compFx = JSON.parse(JSON.stringify(s.compFx));
+    state.layers = s.layers.map(sl => {
+      const l = makeLayer(sl.kind, sl.name);
+      l._htoken = sl._htoken;
+      Object.assign(l, {
+        visible:sl.visible, locked:sl.locked, solo:sl.solo,
+        transform:Object.assign(l.transform, sl.transform),
+        blend:sl.blend, fx:JSON.parse(JSON.stringify(sl.fx)), keys:JSON.parse(JSON.stringify(sl.keys)),
+        text:Object.assign(l.text, sl.text), solid:Object.assign(l.solid, sl.solid)
+      });
+      const m = snap.media.get(sl._htoken);
+      if(m){ l.img = m.img; l.video = m.video; } // reattach live DOM objects, no re-decode
+      return l;
+    });
+    if(snap.selection) state.selection = Object.assign({}, snap.selection);
+    applyFrameSize();
+    restoringHistory = false;
+    emit('layers'); emit('loaded');
+  }
+
+  // Call after any user-committed change. Debounced-by-caller: rapid slider drags should
+  // commit once on release, not per pixel (the UI handles that).
+  function commit(){
+    if(restoringHistory) return;
+    history.past.push(snapshot());
+    if(history.past.length > HISTORY_LIMIT) history.past.shift();
+    history.future.length = 0; // a new action clears the redo branch
+    emit('history');
+  }
+  function undo(){
+    if(history.past.length < 2) return false; // need a prior state to go back to
+    const current = history.past.pop();
+    history.future.push(current);
+    restoreSnapshot(history.past[history.past.length - 1]);
+    emit('history');
+    return true;
+  }
+  function redo(){
+    if(!history.future.length) return false;
+    const next = history.future.pop();
+    history.past.push(next);
+    restoreSnapshot(next);
+    emit('history');
+    return true;
+  }
+  function canUndo(){ return history.past.length >= 2; }
+  function canRedo(){ return history.future.length > 0; }
+  function seedHistory(){ history.past = [snapshot()]; history.future = []; }
 
   /* ---------------- persistence ----------------
    * Two layers of storage:
@@ -797,6 +893,7 @@ window.ForgeComp = (function(){
     addSolidLayer();
     select('composition');
     time = 0;
+    seedHistory();
     emit('layers'); emit('loaded');
   }
 
@@ -807,9 +904,29 @@ window.ForgeComp = (function(){
     // until I change the frame" — the fx canvas was stuck at its default 300×150 size).
     // Re-apply now that fx is actually ready, so the very first render is correctly sized.
     applyFrameSize();
+    seedHistory();
     requestAnimationFrame(tick);
     setInterval(autosave, 2000);
     window.addEventListener('beforeunload', autosave);
+  }
+
+  // ---- copy / paste an effect stack between layers (or layer<->composition) ----
+  let fxClipboard = null;
+  function copyEffects(stack){
+    if(!stack || !stack.length){ fxClipboard = null; return 0; }
+    fxClipboard = JSON.parse(JSON.stringify(stack));
+    return fxClipboard.length;
+  }
+  function hasCopiedEffects(){ return !!(fxClipboard && fxClipboard.length); }
+  function pasteEffects(targetStack, mode){
+    if(!fxClipboard || !fxClipboard.length) return 0;
+    // fresh uids so pasted instances are independent of the originals
+    const copies = fxClipboard.map(f => Object.assign(JSON.parse(JSON.stringify(f)), {uid: ForgeFX.makeInstance(f.typeId).uid}));
+    if(mode === 'replace') targetStack.length = 0;
+    copies.forEach(c => targetStack.push(c));
+    commit();
+    emit('layers');
+    return copies.length;
   }
 
   return {
@@ -825,6 +942,8 @@ window.ForgeComp = (function(){
     hasAutosave, restoreAutosave,
     listProjects, saveProject, loadProject, deleteProject,
     exportProjectFile, importProjectFile, newComposition,
+    commit, undo, redo, canUndo, canRedo, seedHistory,
+    copyEffects, pasteEffects, hasCopiedEffects,
     get stageSize(){ return {w:stage.width, h:stage.height}; }
   };
 })();

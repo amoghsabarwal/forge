@@ -181,15 +181,20 @@ input[type="range"]::-moz-range-thumb{ width:12px; height:12px; border:none; bor
   border:1px solid var(--border); border-radius:8px; color:var(--text-0); padding:7px 8px;
   resize:vertical; min-height:44px; margin-bottom:10px; }
 
-.key-btn, .anim-btn{ font-family:var(--mono); font-size:10px; line-height:1; color:var(--text-2);
+.key-btn, .anim-btn, .audio-btn{ font-family:var(--mono); font-size:10px; line-height:1; color:var(--text-2);
   background:transparent; border:1px solid var(--border); border-radius:6px; padding:2px 5px;
   cursor:pointer; transition:color .15s, border-color .15s, background .15s; }
-.key-btn:hover, .anim-btn:hover{ color:var(--text-0); border-color:var(--border-hi); }
+.key-btn:hover, .anim-btn:hover, .audio-btn:hover{ color:var(--text-0); border-color:var(--border-hi); }
 .key-btn.on{ color:var(--accent); border-color:var(--accent); background:rgba(255,90,31,0.10); }
 .anim-btn.on{ color:var(--accent); border-color:var(--accent); background:rgba(255,90,31,0.10); }
+.audio-btn.on{ color:var(--brand-cyan); border-color:var(--brand-cyan); background:rgba(47,212,192,0.10); }
+.audio-btn.dim{ opacity:0.4; cursor:not-allowed; }
+.audio-btn.dim:hover{ color:var(--text-2); border-color:var(--border); }
 
 .anim-box{ margin:8px 0 10px; padding:8px 9px; border-left:2px solid var(--accent-dim);
   background:rgba(255,90,31,0.035); border-radius:0 5px 5px 0; }
+.audio-box{ margin:8px 0 10px; padding:8px 9px; border-left:2px solid var(--brand-cyan);
+  background:rgba(47,212,192,0.05); border-radius:0 5px 5px 0; }
 .anim-select{ margin-bottom:8px; }
 
 .fx-card{ border:1px solid var(--border); border-radius:7px; background:var(--bg-1);
@@ -314,3 +319,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, textarea:focus-visib
 /* effect color swatch (gradient stops) — a touch smaller than layer color inputs */
 .fx-color{ width:28px; height:22px; border:1px solid var(--border); border-radius:6px;
   background:none; padding:0; cursor:pointer; }
+
+/* audio track button — shows loaded state in the toolbar */
+#audioBtn.active{ border-color:var(--brand-cyan); color:var(--brand-cyan); }
+
+/* copy/paste effect-stack row under the "add effect" dropdown */
+.fx-clipboard-row{ display:flex; gap:6px; margin-top:8px; }
+.fx-clipboard-row .icon-btn{ flex:1; text-align:center; }

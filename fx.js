@@ -552,12 +552,13 @@ window.ForgeFX = (function(){
   function makeInstance(typeId){
     const type = typeById(typeId);
     if(!type) return null;
-    const params = {}, anim = {};
+    const params = {}, anim = {}, audio = {};
     type.params.forEach(p => {
       params[p.key] = p.default;
       anim[p.key] = {on:false, amount:0.4, speed:1, wave:'sine', phase:0};
+      audio[p.key] = {on:false, amount:0.5, band:'bass'};
     });
-    const inst = {uid: uid++, typeId, enabled:true, downsample:1, params, anim};
+    const inst = {uid: uid++, typeId, enabled:true, downsample:1, params, anim, audio};
     if(type.colors){
       inst.colors = {};
       type.colors.forEach(ck => { inst.colors[ck.key] = ck.default.slice(); });
@@ -570,6 +571,7 @@ window.ForgeFX = (function(){
     type.params.forEach(p => {
       inst.params[p.key] = p.default;
       inst.anim[p.key] = {on:false, amount:0.4, speed:1, wave:'sine', phase:0};
+      if(inst.audio) inst.audio[p.key] = {on:false, amount:0.5, band:'bass'};
     });
     if(type.colors && inst.colors){
       type.colors.forEach(ck => { inst.colors[ck.key] = ck.default.slice(); });
@@ -578,6 +580,12 @@ window.ForgeFX = (function(){
   }
 
   // A param's value right now: its (possibly keyframed) base, plus its oscillator.
+  // A global audio signal source, set by the app when an audio track is loaded. When
+  // present it returns 0..1 levels per band; when absent, audio drivers contribute nothing.
+  let audioSource = null;
+  function setAudioSource(fn){ audioSource = fn; } // fn(band) -> 0..1, band in bass/mids/highs/level/beat
+  function audioLevel(band){ return audioSource ? (audioSource(band) || 0) : 0; }
+
   function paramValue(inst, spec, theta, baseOverride){
     let v = baseOverride != null ? baseOverride
           : (inst.params[spec.key] != null ? inst.params[spec.key] : spec.default);
@@ -585,6 +593,14 @@ window.ForgeFX = (function(){
     if(a && a.on && a.amount > 0){
       const osc = waveFn(a.wave)(theta*(a.speed||1) + (a.phase||0));
       v += osc * a.amount * (spec.max - spec.min) * 0.5;
+      v = Math.max(spec.min, Math.min(spec.max, v));
+    }
+    // audio driver: a separate, additive contribution so a param can react to sound whether
+    // or not it also has an oscillator. Unipolar (0..1 * amount) so a beat pushes the value up.
+    const au = inst.audio && inst.audio[spec.key];
+    if(au && au.on && au.amount !== 0){
+      const level = audioLevel(au.band);
+      v += level * au.amount * (spec.max - spec.min);
       v = Math.max(spec.min, Math.min(spec.max, v));
     }
     return v;
@@ -790,7 +806,7 @@ window.ForgeFX = (function(){
   return {
     LIBRARY, WAVES, DOWNSAMPLE_STEPS,
     init, resize, run, hasActive, costOf,
-    typeById, waveFn, makeInstance, resetInstance, paramValue,
+    typeById, waveFn, makeInstance, resetInstance, paramValue, setAudioSource,
     get supported(){ return !!gl; }
   };
 })();

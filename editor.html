@@ -28,12 +28,21 @@
     <div class="tool-divider"></div>
 
     <div class="tool-group">
+      <button class="btn btn-icon btn-sm" id="undoBtn" title="Undo (Cmd/Ctrl+Z)" disabled>↶</button>
+      <button class="btn btn-icon btn-sm" id="redoBtn" title="Redo (Shift+Cmd/Ctrl+Z)" disabled>↷</button>
+    </div>
+
+    <div class="tool-divider"></div>
+
+    <div class="tool-group">
       <button class="btn btn-sm" id="addImageBtn" title="Add an image layer">+ Image</button>
       <button class="btn btn-sm" id="addVideoBtn" title="Add a video layer">+ Video</button>
       <button class="btn btn-sm" id="addTextBtn" title="Add a text layer">+ Text</button>
       <button class="btn btn-sm" id="addSolidBtn" title="Add a solid background layer">+ Solid</button>
+      <button class="btn btn-sm" id="audioBtn" title="Load an audio track for effects to react to">♪ Audio</button>
       <input type="file" id="imageInput" accept="image/*" multiple hidden>
       <input type="file" id="videoInput" accept="video/*" multiple hidden>
+      <input type="file" id="audioInput" accept="audio/*" hidden>
     </div>
 
     <div class="tool-group zoom-group">
@@ -99,6 +108,7 @@
 </div>
 
 <script src="fx.js"></script>
+<script src="audio.js"></script>
 <script src="comp.js"></script>
 <script src="ui.js"></script>
 </body>

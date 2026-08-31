@@ -107,6 +107,9 @@ ui.js           panel logic, canvas interaction, timeline
 Working prototype, actively evolving.
 
 - **Projects save into the browser or as files.** Use Save to keep a named project in this browser (images embedded, so they come back intact), Open to browse and reload saved projects, or Download .forge to get a portable file you can move between machines. A fresh session always starts clean — if you have unsaved work from last time, Forge offers to restore it rather than loading it silently.
+- **Undo/redo covers the working session.** Layer and effect changes, transforms, and reordering are all on the history stack (Cmd/Ctrl+Z, Shift+Cmd/Ctrl+Z). It resets with a new project or a page reload — it isn't part of what a saved project remembers.
+- **Effect stacks are copyable between layers.** Build a look on one layer, copy the stack, paste it onto another.
+- **Effects can react to an audio track.** Load a track (♪ Audio in the toolbar), then any parameter's ♪ button lets it ride the track's bass, mids, highs, overall level, or detected beats. This drives the *visuals* — the audio isn't muxed into exported video yet, and it can't be embedded in a saved project (same reason video can't: it's too large for local storage), so you reattach the track each session.
 - **No object tracking yet.** Attaching an effect to a tracked subject in the frame is a real computer-vision feature, not a toggle, and it hasn't been built.
 - **The effects pass is real-time, not offline-rendered.** A heavy stack at 3× export resolution may drop frames rather than corrupt the file. Per-effect downsampling is the fix.
 
