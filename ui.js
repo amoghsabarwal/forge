@@ -284,12 +284,15 @@
       right.appendChild(ab);
     }
     if(opts.onAudio){
-      const audioReady = window.ForgeAudio && ForgeAudio.loaded;
+      // Don't cache "is a track loaded" at build time — a button built before a track is
+      // loaded would otherwise stay stuck thinking there's no audio forever, even after one
+      // is added. Check live, on click, and also on redraw for the dim/title state.
+      const audioReady = () => !!(window.ForgeAudio && ForgeAudio.loaded);
       const ub = el('button','audio-btn'+(opts.audioOn && opts.audioOn() ? ' on':''), '♪');
-      ub.title = audioReady ? 'React to the audio track' : 'Load an audio track first (♪ Audio in the toolbar)';
-      if(!audioReady) ub.classList.add('dim');
+      ub.title = audioReady() ? 'React to the audio track' : 'Load an audio track first (♪ Audio in the toolbar)';
+      if(!audioReady()) ub.classList.add('dim');
       ub.addEventListener('click', () => {
-        if(!audioReady){ toast('Load an audio track first — ♪ Audio in the toolbar.'); return; }
+        if(!audioReady()){ toast('Load an audio track first — ♪ Audio in the toolbar.'); return; }
         opts.onAudio(); buildInspector();
       });
       right.appendChild(ub);
@@ -828,7 +831,7 @@
         panel.appendChild(el('p','modal-text','Current track: ' + ForgeAudio.name + '. Effects can react to it via the ♪ button on any parameter.'));
         const row = el('div','modal-actions');
         const remove = el('button','btn','Remove track');
-        remove.addEventListener('click', () => { ForgeAudio.clear(); updateAudioBtn(); close(); toast('Audio track removed.'); });
+        remove.addEventListener('click', () => { ForgeAudio.clear(); updateAudioBtn(); buildInspector(); close(); toast('Audio track removed.'); });
         const swap = el('button','btn','Replace…');
         swap.addEventListener('click', () => { close(); audioInput.click(); });
         const cancel = el('button','btn btn-primary','Done');
@@ -843,7 +846,11 @@
   audioInput.addEventListener('change', e => {
     const file = e.target.files[0];
     if(file) ForgeAudio.load(file)
-      .then(info => { updateAudioBtn(); toast('Loaded “' + info.name + '” — add a ♪ driver to any parameter.'); })
+      .then(info => {
+        updateAudioBtn();
+        buildInspector(); // any already-open effect's ♪ buttons were built before the track existed — refresh so they pick it up
+        toast('Loaded “' + info.name + '” — add a ♪ driver to any parameter.');
+      })
       .catch(() => toast('Could not load that audio file.'));
     audioInput.value = '';
   });
@@ -927,7 +934,12 @@
     const panel = el('div','modal');
     backdrop.appendChild(panel);
     modalHost.appendChild(backdrop);
-    const close = () => { modalHost.hidden = true; modalHost.innerHTML = ''; };
+    const close = () => {
+      modalHost.hidden = true; modalHost.innerHTML = '';
+      document.removeEventListener('keydown', onEsc);
+    };
+    const onEsc = e => { if(e.key === 'Escape') close(); };
+    document.addEventListener('keydown', onEsc);
     backdrop.addEventListener('click', e => { if(e.target === backdrop) close(); });
     build(panel, close);
     return close;
